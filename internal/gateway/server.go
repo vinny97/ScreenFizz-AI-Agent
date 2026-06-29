@@ -82,6 +82,11 @@ func (s *Server) SetPostTurnProcessor(pt tools.PostTurnProcessor) {
 	s.postTurn = pt
 }
 
+// AddHTTPHandler registers a route provider before BuildMux is called.
+func (s *Server) AddHTTPHandler(h interface{ RegisterRoutes(*http.ServeMux) }) {
+	s.handlers = append(s.handlers, h)
+}
+
 // NewServer creates a new gateway server.
 func NewServer(cfg *config.Config, eventPub bus.EventPublisher, agents *agent.Router, sess store.SessionStore, toolsReg ...*tools.Registry) *Server {
 	s := &Server{

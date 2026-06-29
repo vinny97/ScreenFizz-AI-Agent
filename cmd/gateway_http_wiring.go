@@ -45,6 +45,9 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	postTurn tools.PostTurnProcessor,
 	mediaStore *media.Store,
 ) {
+	// AgentBot bridge routes are always mounted; /chatwoot/health reports whether
+	// the required environment variables are configured.
+	d.server.AddHTTPHandler(httpapi.NewChatwootHandlerFromEnv())
 	if h.providers != nil {
 		h.providers.SetAPIBaseFallback(d.cfg.Providers.APIBaseForType)
 	}
