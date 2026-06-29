@@ -1,7 +1,10 @@
 package http
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +14,7 @@ import (
 )
 
 func TestChatwootHealth(t *testing.T) {
-	h := NewChatwootHandler("", "", "", "", "", nil)
+	h := NewChatwootHandler("", "", "", false, "", "", "", nil)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	rec := httptest.NewRecorder()
@@ -58,7 +61,7 @@ func TestChatwootWebhookRepliesAndDeduplicates(t *testing.T) {
 	}))
 	defer chatwoot.Close()
 
-	h := NewChatwootHandler(chatwoot.URL, "chatwoot-token", goclaw.URL, "goclaw-key", "support-agent", nil)
+	h := NewChatwootHandler(chatwoot.URL, "chatwoot-token", "", false, goclaw.URL, "goclaw-key", "support-agent", nil)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 	payload := `{"event":"message_created","id":123,"content":" Help me ","message_type":"incoming","private":false,"account":{"id":7},"conversation":{"id":42},"sender":{"type":"contact"}}`
@@ -75,7 +78,7 @@ func TestChatwootWebhookRepliesAndDeduplicates(t *testing.T) {
 }
 
 func TestChatwootWebhookIgnoreFilters(t *testing.T) {
-	h := NewChatwootHandler("https://chatwoot.example", "token", "https://goclaw.example", "key", "model", &http.Client{
+	h := NewChatwootHandler("https://chatwoot.example", "token", "", false, "https://goclaw.example", "key", "model", &http.Client{
 		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			t.Fatal("ignored webhook made an upstream request")
 			return nil, nil
@@ -97,6 +100,61 @@ func TestChatwootWebhookIgnoreFilters(t *testing.T) {
 			t.Errorf("payload %s: status=%d body=%s", payload, rec.Code, rec.Body.String())
 		}
 	}
+}
+
+func TestChatwootWebhookSignature(t *testing.T) {
+	secret := "agentbot-webhook-secret"
+	payload := []byte(`{"event":"conversation_updated","id":1,"content":"hello","message_type":"incoming"}`)
+	h := NewChatwootHandler("https://chatwoot.example", "token", secret, true, "https://goclaw.example", "key", "model", nil)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	tests := []struct {
+		name      string
+		timestamp string
+		signature string
+		want      int
+	}{
+		{name: "valid", timestamp: "1770000000", signature: signChatwootTestPayload(secret, "1770000000", payload), want: http.StatusOK},
+		{name: "invalid", timestamp: "1770000000", signature: "sha256=bad", want: http.StatusUnauthorized},
+		{name: "missing timestamp", signature: signChatwootTestPayload(secret, "1770000000", payload), want: http.StatusUnauthorized},
+		{name: "missing signature", timestamp: "1770000000", want: http.StatusUnauthorized},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/chatwoot/webhook", strings.NewReader(string(payload)))
+			if test.timestamp != "" {
+				req.Header.Set("X-Chatwoot-Timestamp", test.timestamp)
+			}
+			if test.signature != "" {
+				req.Header.Set("X-Chatwoot-Signature", test.signature)
+			}
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != test.want {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, test.want, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestChatwootWebhookMissingSignatureAllowedWhenNotStrict(t *testing.T) {
+	h := NewChatwootHandler("https://chatwoot.example", "token", "secret", false, "https://goclaw.example", "key", "model", nil)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+	rec := httptest.NewRecorder()
+	payload := `{"event":"conversation_updated","id":1,"content":"hello","message_type":"incoming"}`
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/chatwoot/webhook", strings.NewReader(payload)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func signChatwootTestPayload(secret, timestamp string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp + "."))
+	_, _ = mac.Write(body)
+	return fmt.Sprintf("sha256=%x", mac.Sum(nil))
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

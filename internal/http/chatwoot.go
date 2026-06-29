@@ -3,6 +3,8 @@ package http
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,12 +27,14 @@ const (
 
 // ChatwootHandler adapts Chatwoot AgentBot webhooks to GoClaw's OpenAI-compatible API.
 type ChatwootHandler struct {
-	baseURL     string
-	accessToken string
-	goclawURL   string
-	goclawKey   string
-	model       string
-	client      *http.Client
+	baseURL          string
+	accessToken      string
+	webhookSecret    string
+	requireSignature bool
+	goclawURL        string
+	goclawKey        string
+	model            string
+	client           *http.Client
 
 	mu   sync.Mutex
 	seen map[string]time.Time
@@ -42,6 +46,8 @@ func NewChatwootHandlerFromEnv() *ChatwootHandler {
 	return NewChatwootHandler(
 		os.Getenv("CHATWOOT_BASE_URL"),
 		os.Getenv("CHATWOOT_API_ACCESS_TOKEN"),
+		os.Getenv("CHATWOOT_WEBHOOK_SECRET"),
+		envBool("CHATWOOT_REQUIRE_WEBHOOK_SIGNATURE"),
 		os.Getenv("GOCLAW_BASE_URL"),
 		os.Getenv("GOCLAW_API_KEY"),
 		os.Getenv("GOCLAW_MODEL"),
@@ -50,19 +56,21 @@ func NewChatwootHandlerFromEnv() *ChatwootHandler {
 }
 
 // NewChatwootHandler creates an adapter. A nil client gets a bounded default client.
-func NewChatwootHandler(chatwootURL, accessToken, goclawURL, goclawKey, model string, client *http.Client) *ChatwootHandler {
+func NewChatwootHandler(chatwootURL, accessToken, webhookSecret string, requireSignature bool, goclawURL, goclawKey, model string, client *http.Client) *ChatwootHandler {
 	if client == nil {
 		client = &http.Client{Timeout: 90 * time.Second}
 	}
 	return &ChatwootHandler{
-		baseURL:     strings.TrimRight(strings.TrimSpace(chatwootURL), "/"),
-		accessToken: strings.TrimSpace(accessToken),
-		goclawURL:   strings.TrimRight(strings.TrimSpace(goclawURL), "/"),
-		goclawKey:   strings.TrimSpace(goclawKey),
-		model:       strings.TrimSpace(model),
-		client:      client,
-		seen:        make(map[string]time.Time),
-		now:         time.Now,
+		baseURL:          strings.TrimRight(strings.TrimSpace(chatwootURL), "/"),
+		accessToken:      strings.TrimSpace(accessToken),
+		webhookSecret:    strings.TrimSpace(webhookSecret),
+		requireSignature: requireSignature,
+		goclawURL:        strings.TrimRight(strings.TrimSpace(goclawURL), "/"),
+		goclawKey:        strings.TrimSpace(goclawKey),
+		model:            strings.TrimSpace(model),
+		client:           client,
+		seen:             make(map[string]time.Time),
+		now:              time.Now,
 	}
 }
 
@@ -72,20 +80,20 @@ func (h *ChatwootHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type chatwootWebhook struct {
-	Event          string          `json:"event"`
-	ID             json.RawMessage `json:"id"`
-	Content        string          `json:"content"`
-	MessageType    json.RawMessage `json:"message_type"`
-	Private        bool            `json:"private"`
-	Account        struct {
+	Event       string          `json:"event"`
+	ID          json.RawMessage `json:"id"`
+	Content     string          `json:"content"`
+	MessageType json.RawMessage `json:"message_type"`
+	Private     bool            `json:"private"`
+	Account struct {
 		ID int64 `json:"id"`
 	} `json:"account"`
-	AccountID      int64           `json:"account_id"`
-	Conversation   struct {
+	AccountID    int64 `json:"account_id"`
+	Conversation struct {
 		ID int64 `json:"id"`
 	} `json:"conversation"`
-	ConversationID int64           `json:"conversation_id"`
-	SenderType     string          `json:"sender_type"`
+	ConversationID int64  `json:"conversation_id"`
+	SenderType     string `json:"sender_type"`
 	Sender         struct {
 		Type string `json:"type"`
 	} `json:"sender"`
@@ -119,8 +127,17 @@ func (h *ChatwootHandler) handleWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, chatwootMaxBody)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid webhook payload"})
+		return
+	}
+	if !h.verifyWebhookSignature(r, body) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid webhook signature"})
+		return
+	}
 	var event chatwootWebhook
-	if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+	if err := json.Unmarshal(body, &event); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid webhook payload"})
 		return
 	}
@@ -161,6 +178,35 @@ func (h *ChatwootHandler) handleWebhook(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "replied"})
 }
 
+func (h *ChatwootHandler) verifyWebhookSignature(r *http.Request, body []byte) bool {
+	signature := strings.TrimSpace(r.Header.Get("X-Chatwoot-Signature"))
+	if signature == "" {
+		if h.requireSignature {
+			slog.Warn("security.chatwoot.signature_missing", "remote_addr", r.RemoteAddr, "strict", true)
+			return false
+		}
+		slog.Warn("security.chatwoot.signature_missing", "remote_addr", r.RemoteAddr, "strict", false)
+		return true
+	}
+
+	timestamp := strings.TrimSpace(r.Header.Get("X-Chatwoot-Timestamp"))
+	if h.webhookSecret == "" || timestamp == "" {
+		slog.Warn("security.chatwoot.signature_unverifiable", "remote_addr", r.RemoteAddr, "has_secret", h.webhookSecret != "", "has_timestamp", timestamp != "")
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(h.webhookSecret))
+	_, _ = mac.Write([]byte(timestamp))
+	_, _ = mac.Write([]byte("."))
+	_, _ = mac.Write(body)
+	expected := "sha256=" + fmt.Sprintf("%x", mac.Sum(nil))
+	valid := hmac.Equal([]byte(expected), []byte(signature))
+	if !valid {
+		slog.Warn("security.chatwoot.signature_invalid", "remote_addr", r.RemoteAddr)
+	}
+	return valid
+}
+
 func ignoreReason(e chatwootWebhook, messageID string) string {
 	if e.Event != "message_created" {
 		return "event"
@@ -174,7 +220,7 @@ func ignoreReason(e chatwootWebhook, messageID string) string {
 	if strings.TrimSpace(e.Content) == "" {
 		return "empty"
 	}
-	sender := strings.NewReplacer("_", "", "-", "", " ", "").Replace(strings.ToLower(firstNonEmpty(e.SenderType, e.Sender.Type)))
+	sender := strings.NewReplacer("_", "", "-", "", " ", "").Replace(strings.ToLower(chatwootFirstNonEmpty(e.SenderType, e.Sender.Type)))
 	if strings.Contains(sender, "agentbot") || strings.Contains(sender, "captain::assistant") {
 		return "bot"
 	}
@@ -276,6 +322,12 @@ func (h *ChatwootHandler) missingConfig() []string {
 		{"GOCLAW_API_KEY", h.goclawKey},
 		{"GOCLAW_MODEL", h.model},
 	}
+	if h.requireSignature && h.webhookSecret == "" {
+		values = append(values, struct {
+			name  string
+			value string
+		}{"CHATWOOT_WEBHOOK_SECRET", h.webhookSecret})
+	}
 	missing := make([]string, 0)
 	for _, item := range values {
 		if item.value == "" {
@@ -283,6 +335,11 @@ func (h *ChatwootHandler) missingConfig() []string {
 		}
 	}
 	return missing
+}
+
+func envBool(name string) bool {
+	value, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(name)))
+	return err == nil && value
 }
 
 func (h *ChatwootHandler) claim(id string) bool {
@@ -316,7 +373,7 @@ func (h *ChatwootHandler) release(id string) {
 	h.mu.Unlock()
 }
 
-func firstNonEmpty(values ...string) string {
+func chatwootFirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
 			return value
