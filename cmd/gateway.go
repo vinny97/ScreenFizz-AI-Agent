@@ -449,12 +449,12 @@ func runGateway() {
 			oauthRefresher = r
 		}
 		mcpOAuthH = httpapi.NewMCPOAuthHandler(httpapi.MCPOAuthHandlerDeps{
-			MCPStore:   pgStores.MCP,
-			OAuthStore: pgStores.MCPOAuthTokens,
-			Discoverer: mcpoauth.NewDiscoverer(safeHTTPClient),
-			FlowMgr:    mcpoauth.NewFlowManager(safeHTTPClient),
-			Refresher:  oauthRefresher,
-			EventBus:   msgBus,
+			MCPStore:    pgStores.MCP,
+			OAuthStore:  pgStores.MCPOAuthTokens,
+			Discoverer:  mcpoauth.NewDiscoverer(safeHTTPClient),
+			FlowMgr:     mcpoauth.NewFlowManager(safeHTTPClient),
+			Refresher:   oauthRefresher,
+			EventBus:    msgBus,
 			PublicURL:   cfg.Gateway.PublicURL,
 			Port:        cfg.Gateway.Port,
 			TenantStore: pgStores.Tenants,
@@ -691,6 +691,7 @@ func runGateway() {
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	startLeadEngineScheduler(ctx)
 
 	server.StartUpdateChecker(ctx)
 
