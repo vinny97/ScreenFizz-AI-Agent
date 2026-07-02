@@ -134,23 +134,55 @@ func (c *Client) SendReadyLeads(ctx context.Context, sender *TestSender) (SendRe
 
 	result := SendResult{}
 	for _, lead := range leads {
-		if strings.TrimSpace(lead.Email) == "" {
+		recipients := splitLeadEmails(lead.Email)
+		if len(recipients) == 0 {
 			result.Failed++
 			slog.Error("leadengine.send.failed", "reason", "lead has no email", "lead_id", string(lead.ID))
 			continue
 		}
-		messageID, err := sender.Send(ctx, campaign, &lead, lead.Email)
-		if err != nil {
+		messageIDs, sendErr := sender.sendLeadEmails(ctx, campaign, &lead, recipients)
+		if sendErr != nil {
 			result.Failed++
-			slog.Error("leadengine.send.failed", "error", err, "lead_id", string(lead.ID), "email", lead.Email)
+			slog.Error("leadengine.send.failed", "error", sendErr, "lead_id", string(lead.ID), "email", lead.Email)
 			continue
 		}
-		if err := c.markLeadSent(ctx, lead.ID, messageID); err != nil {
+		if err := c.markLeadSent(ctx, lead.ID, strings.Join(messageIDs, ",")); err != nil {
 			return SendResult{}, err
 		}
 		result.Sent++
 	}
 	return result, nil
+}
+
+func splitLeadEmails(value string) []string {
+	parts := strings.Split(value, ",")
+	recipients := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		email := strings.TrimSpace(part)
+		if email == "" {
+			continue
+		}
+		key := strings.ToLower(email)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		recipients = append(recipients, email)
+	}
+	return recipients
+}
+
+func (s *TestSender) sendLeadEmails(ctx context.Context, campaign *activeSenderCampaign, lead *emailReadyLead, recipients []string) ([]string, error) {
+	messageIDs := make([]string, 0, len(recipients))
+	for _, recipient := range recipients {
+		messageID, err := s.Send(ctx, campaign, lead, recipient)
+		if err != nil {
+			return messageIDs, fmt.Errorf("send to %s: %w", recipient, err)
+		}
+		messageIDs = append(messageIDs, messageID)
+	}
+	return messageIDs, nil
 }
 
 func (c *Client) listEmailReadyLeads(ctx context.Context) ([]emailReadyLead, error) {

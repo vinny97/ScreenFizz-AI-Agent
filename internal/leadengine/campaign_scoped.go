@@ -92,17 +92,18 @@ func (c *Client) SendReadyLeadsForCampaign(ctx context.Context, sender *TestSend
 	}
 	result := SendResult{}
 	for _, lead := range leads {
-		if strings.TrimSpace(lead.Email) == "" {
+		recipients := splitLeadEmails(lead.Email)
+		if len(recipients) == 0 {
 			result.Failed++
 			continue
 		}
-		messageID, err := sender.Send(ctx, activeSender, &lead, lead.Email)
-		if err != nil {
+		messageIDs, sendErr := sender.sendLeadEmails(ctx, activeSender, &lead, recipients)
+		if sendErr != nil {
 			result.Failed++
-			slog.Error("leadengine.send.failed", "error", err, "lead_id", string(lead.ID), "email", lead.Email)
+			slog.Error("leadengine.send.failed", "error", sendErr, "lead_id", string(lead.ID), "email", lead.Email)
 			continue
 		}
-		if err := c.markLeadSent(ctx, lead.ID, messageID); err != nil {
+		if err := c.markLeadSent(ctx, lead.ID, strings.Join(messageIDs, ",")); err != nil {
 			return SendResult{}, err
 		}
 		result.Sent++

@@ -192,7 +192,7 @@ func TestSendReadyLeadsContinuesAfterFailures(t *testing.T) {
 				}
 				w.Header().Set("Content-Range", "0-2/3")
 				fmt.Fprint(w, `[
-					{"id":"1","email":"first@example.com","email_subject":"First","email_body_html":"<p>One</p>","email_body_text":"One"},
+					{"id":"1","email":"first@example.com, alternate@example.com","email_subject":"First","email_body_html":"<p>One</p>","email_body_text":"One"},
 					{"id":"2","email":"second@example.com","email_subject":"Second","email_body_html":"<p>Two</p>","email_body_text":"Two"},
 					{"id":"3","email":"third@example.com","email_subject":"Third","email_body_html":"<p>Three</p>","email_body_text":"Three"}
 				]`)
@@ -265,7 +265,7 @@ func TestSendReadyLeadsContinuesAfterFailures(t *testing.T) {
 	if result.Sent != 2 || result.Failed != 1 {
 		t.Fatalf("result = %+v", result)
 	}
-	if strings.Join(recipients, ",") != "first@example.com,second@example.com,third@example.com" {
+	if strings.Join(recipients, ",") != "first@example.com,alternate@example.com,second@example.com,third@example.com" {
 		t.Fatalf("recipients = %#v", recipients)
 	}
 	if _, found := updated["eq.2"]; found {
@@ -285,5 +285,8 @@ func TestSendReadyLeadsContinuesAfterFailures(t *testing.T) {
 		if got.BrevoMessageID == "" {
 			t.Fatalf("brevo_message_id for %s is empty", id)
 		}
+	}
+	if got := updated["eq.1"].BrevoMessageID; got != "msg-first@example.com,msg-alternate@example.com" {
+		t.Fatalf("brevo_message_id for multi-address lead = %q", got)
 	}
 }
