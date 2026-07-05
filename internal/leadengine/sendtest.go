@@ -26,6 +26,7 @@ type emailReadyLead struct {
 type activeSenderCampaign struct {
 	SenderName  string
 	SenderEmail string
+	ReplyDomain string
 }
 
 type TestSender struct {
@@ -35,8 +36,20 @@ type TestSender struct {
 }
 
 type SendResult struct {
-	Sent   int
-	Failed int
+	Sent         int
+	Failed       int
+	MessagesSent int
+}
+
+type BrevoAPIError struct {
+	StatusCode int
+	Status     string
+	Body       string
+	Header     http.Header
+}
+
+func (e *BrevoAPIError) Error() string {
+	return fmt.Sprintf("Brevo returned %s: %s", e.Status, e.Body)
 }
 
 const leadStatusSent = "SENT"
@@ -150,6 +163,7 @@ func (c *Client) SendReadyLeads(ctx context.Context, sender *TestSender) (SendRe
 			return SendResult{}, err
 		}
 		result.Sent++
+		result.MessagesSent += len(messageIDs)
 	}
 	return result, nil
 }
@@ -295,6 +309,10 @@ func (c *Client) markLeadSent(ctx context.Context, rawID json.RawMessage, messag
 }
 
 func (s *TestSender) Send(ctx context.Context, campaign *activeSenderCampaign, lead *emailReadyLead, to string) (string, error) {
+	return s.send(ctx, campaign, lead, to, "")
+}
+
+func (s *TestSender) send(ctx context.Context, campaign *activeSenderCampaign, lead *emailReadyLead, to, replyTo string) (string, error) {
 	if campaign == nil {
 		return "", errors.New("sender campaign is required")
 	}
@@ -302,7 +320,7 @@ func (s *TestSender) Send(ctx context.Context, campaign *activeSenderCampaign, l
 		return "", errors.New("EMAIL_READY lead is required")
 	}
 
-	payload, err := json.Marshal(map[string]any{
+	payloadData := map[string]any{
 		"sender": map[string]string{
 			"name":  campaign.SenderName,
 			"email": campaign.SenderEmail,
@@ -313,7 +331,11 @@ func (s *TestSender) Send(ctx context.Context, campaign *activeSenderCampaign, l
 		"subject":     lead.Subject,
 		"htmlContent": lead.HTMLBody,
 		"textContent": lead.TextBody,
-	})
+	}
+	if strings.TrimSpace(replyTo) != "" {
+		payloadData["replyTo"] = map[string]string{"name": campaign.SenderName, "email": replyTo}
+	}
+	payload, err := json.Marshal(payloadData)
 	if err != nil {
 		return "", fmt.Errorf("encode Brevo email: %w", err)
 	}
@@ -336,7 +358,7 @@ func (s *TestSender) Send(ctx context.Context, campaign *activeSenderCampaign, l
 		return "", fmt.Errorf("read Brevo response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("Brevo returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return "", &BrevoAPIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: strings.TrimSpace(string(body)), Header: resp.Header.Clone()}
 	}
 	var response struct {
 		MessageID string `json:"messageId"`

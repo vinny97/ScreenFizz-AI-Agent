@@ -60,8 +60,9 @@ func TestSendLimit(t *testing.T) {
 		limit int
 		want  int
 	}{
-		{name: "default", limit: 0, want: 100},
-		{name: "cap", limit: 500, want: 100},
+		{name: "default", limit: 0, want: 500},
+		{name: "cap", limit: 1000, want: 500},
+		{name: "daily", limit: 500, want: 500},
 		{name: "custom", limit: 25, want: 25},
 	}
 	for _, tt := range tests {
@@ -71,5 +72,15 @@ func TestSendLimit(t *testing.T) {
 				t.Fatalf("SendLimit() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCampaignNotDueOnWeekend(t *testing.T) {
+	t.Parallel()
+
+	campaign := ScheduledCampaign{ScheduleTime: "09:00:00", Timezone: "Europe/London"}
+	saturday := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
+	if campaignDue(saturday, campaign) {
+		t.Fatal("campaign should not be due on Saturday")
 	}
 }

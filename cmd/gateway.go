@@ -691,6 +691,9 @@ func runGateway() {
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	if leadEngineWebhooks := newLeadEngineWebhookHandler(); leadEngineWebhooks != nil {
+		server.AddHTTPHandler(leadEngineWebhooks)
+	}
 	startLeadEngineScheduler(ctx)
 
 	server.StartUpdateChecker(ctx)

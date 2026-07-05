@@ -36,6 +36,10 @@ type ScheduledCampaign struct {
 	ScheduleTime       string
 	Timezone           string
 	LastRunAt          *time.Time
+	PausedAt           *time.Time
+	ReplyDomain        string
+	BounceThreshold    float64
+	BounceMinSample    int
 }
 
 type CampaignRunCounts struct {
@@ -105,7 +109,9 @@ func (s *CampaignScheduler) runOnce(ctx context.Context) {
 	}
 	now := s.now()
 	for _, campaign := range campaigns {
-		if !campaignDue(now, campaign) {
+		due := campaignDue(now, campaign)
+		resume := !due && campaignSendResumeDue(now, campaign)
+		if !due && !resume {
 			continue
 		}
 		if !s.markRunning(campaign.ID) {
@@ -113,13 +119,23 @@ func (s *CampaignScheduler) runOnce(ctx context.Context) {
 		}
 		go func(c ScheduledCampaign) {
 			defer s.unmarkRunning(c.ID)
-			if err := s.Supabase.UpdateCampaignLastRunAt(ctx, c.ID, s.now().UTC()); err != nil {
-				slog.Error("leadengine.scheduler.claim_failed", "campaign", c.Name, "error", err)
-				return
+			if due {
+				if err := s.Supabase.UpdateCampaignLastRunAt(ctx, c.ID, s.now().UTC()); err != nil {
+					slog.Error("leadengine.scheduler.claim_failed", "campaign", c.Name, "error", err)
+					return
+				}
 			}
 			start := time.Now()
 			slog.Info("leadengine.scheduler.campaign_started", "campaign", c.Name)
-			counts, err := s.runCampaign(ctx, c)
+			var counts CampaignRunCounts
+			var err error
+			if due {
+				counts, err = s.runCampaign(ctx, c)
+			} else {
+				var sendResult SendResult
+				sendResult, err = s.Supabase.SendReadyLeadsForCampaignPaced(ctx, s.Sender, c, DefaultSendSchedule())
+				counts.SentCount = sendResult.MessagesSent
+			}
 			duration := time.Since(start)
 			if err != nil {
 				slog.Error("leadengine.scheduler.campaign_failed",
@@ -143,6 +159,22 @@ func (s *CampaignScheduler) runOnce(ctx context.Context) {
 				"duration", duration.String())
 		}(campaign)
 	}
+}
+
+func campaignSendResumeDue(now time.Time, campaign ScheduledCampaign) bool {
+	if campaign.LastRunAt == nil || campaign.PausedAt != nil {
+		return false
+	}
+	location, err := time.LoadLocation(strings.TrimSpace(campaign.Timezone))
+	if err != nil {
+		return false
+	}
+	localNow := now.In(location)
+	lastLocal := campaign.LastRunAt.In(location)
+	if lastLocal.Year() != localNow.Year() || lastLocal.YearDay() != localNow.YearDay() {
+		return false
+	}
+	return insideSendWindow(localNow, workingDayStartHour, workingDayEndHour)
 }
 
 func (s *CampaignScheduler) runCampaign(ctx context.Context, campaign ScheduledCampaign) (CampaignRunCounts, error) {
@@ -186,11 +218,11 @@ func (s *CampaignScheduler) runCampaign(ctx context.Context, campaign ScheduledC
 	}
 	counts.GeneratedCount = generateResult.Generated
 
-	sendResult, err := s.Supabase.SendReadyLeadsForCampaign(ctx, s.Sender, campaign, limit)
+	sendResult, err := s.Supabase.SendReadyLeadsForCampaignPaced(ctx, s.Sender, campaign, DefaultSendSchedule())
 	if err != nil {
 		return counts, err
 	}
-	counts.SentCount = sendResult.Sent
+	counts.SentCount = sendResult.MessagesSent
 
 	return counts, nil
 }
@@ -220,10 +252,10 @@ func (s *CampaignScheduler) unmarkRunning(id string) {
 
 func (c ScheduledCampaign) SendLimit() int {
 	if c.DailyLimit <= 0 {
-		return 100
+		return 500
 	}
-	if c.DailyLimit > 100 {
-		return 100
+	if c.DailyLimit > 500 {
+		return 500
 	}
 	return c.DailyLimit
 }
@@ -287,10 +319,17 @@ func parseScheduledCampaign(row Campaign) (ScheduledCampaign, error) {
 		ScheduleTime:       stringValue(row["schedule_time"]),
 		Timezone:           stringValue(row["timezone"]),
 		LastRunAt:          lastRunAt,
+		PausedAt:           optionalTime(row["paused_at"]),
+		ReplyDomain:        stringValue(row["reply_domain"]),
+		BounceThreshold:    floatValue(row["bounce_pause_threshold"]),
+		BounceMinSample:    intValue(row["bounce_min_sample"]),
 	}, nil
 }
 
 func campaignDue(now time.Time, campaign ScheduledCampaign) bool {
+	if campaign.PausedAt != nil {
+		return false
+	}
 	location, err := time.LoadLocation(strings.TrimSpace(campaign.Timezone))
 	if err != nil || strings.TrimSpace(campaign.ScheduleTime) == "" {
 		return false
@@ -300,6 +339,9 @@ func campaignDue(now time.Time, campaign ScheduledCampaign) bool {
 		return false
 	}
 	localNow := now.In(location)
+	if localNow.Weekday() == time.Saturday || localNow.Weekday() == time.Sunday {
+		return false
+	}
 	scheduled := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), hour, minute, second, 0, location)
 	if localNow.Before(scheduled) {
 		return false
@@ -309,6 +351,32 @@ func campaignDue(now time.Time, campaign ScheduledCampaign) bool {
 	}
 	lastLocal := campaign.LastRunAt.In(location)
 	return lastLocal.Year() != localNow.Year() || lastLocal.YearDay() != localNow.YearDay()
+}
+
+func optionalTime(value any) *time.Time {
+	text, _ := value.(string)
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339, text)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339Nano, text)
+	}
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
+
+func floatValue(value any) float64 {
+	switch v := value.(type) {
+	case float64:
+		return v
+	case json.Number:
+		n, _ := v.Float64()
+		return n
+	}
+	return 0
 }
 
 func parseScheduleTime(value string) (int, int, int, bool) {

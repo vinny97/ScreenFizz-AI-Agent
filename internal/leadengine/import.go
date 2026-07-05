@@ -51,6 +51,10 @@ func (c *Client) ImportLeads(ctx context.Context, campaignName string, dataset j
 	if err != nil {
 		return ImportResult{}, err
 	}
+	suppressed, err := c.listSuppressedEmails(ctx)
+	if err != nil {
+		return ImportResult{}, err
+	}
 	result := ImportResult{}
 	newLeads := make([]leadInsert, 0, len(items))
 	for _, item := range items {
@@ -60,6 +64,17 @@ func (c *Client) ImportLeads(ctx context.Context, campaignName string, dataset j
 			continue
 		}
 		normalizedEmail := strings.ToLower(email)
+		blocked := false
+		for _, address := range splitLeadEmails(email) {
+			if _, found := suppressed[strings.ToLower(address)]; found {
+				blocked = true
+				break
+			}
+		}
+		if blocked {
+			result.Skipped++
+			continue
+		}
 		if _, found := existing[normalizedEmail]; found {
 			result.Skipped++
 			continue
@@ -88,6 +103,22 @@ func (c *Client) ImportLeads(ctx context.Context, campaignName string, dataset j
 		}
 	}
 	result.Imported = len(newLeads)
+	return result, nil
+}
+
+func (c *Client) listSuppressedEmails(ctx context.Context) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	var rows []struct {
+		Email string `json:"email"`
+	}
+	if err := c.restJSON(ctx, http.MethodGet, "lead_email_suppressions", nil, nil, &rows); err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if email := strings.ToLower(strings.TrimSpace(row.Email)); email != "" {
+			result[email] = struct{}{}
+		}
+	}
 	return result, nil
 }
 

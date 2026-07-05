@@ -107,6 +107,7 @@ func (c *Client) SendReadyLeadsForCampaign(ctx context.Context, sender *TestSend
 			return SendResult{}, err
 		}
 		result.Sent++
+		result.MessagesSent += len(messageIDs)
 	}
 	return result, nil
 }

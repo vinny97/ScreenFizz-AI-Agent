@@ -15,6 +15,11 @@ func TestImportLeadsMapsAndSkipsEmails(t *testing.T) {
 
 	var inserted []leadInsert
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/v1/lead_email_suppressions" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `[]`)
+			return
+		}
 		if r.URL.Path != "/rest/v1/leads" {
 			http.NotFound(w, r)
 			return
