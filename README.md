@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="_statics/goclaw-logo.svg" alt="GoClaw" height="200" />
-</p>
+
 
 <p align="center"><strong>Multi-Tenant AI Agent Platform</strong></p>
 
