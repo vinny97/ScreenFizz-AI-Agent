@@ -6,7 +6,8 @@
     "capabilities": "能力",
     "data": "数据",
     "monitoring": "监控",
-    "system": "系统"
+    "system": "系统",
+    "marketing": "营销"
   },
   "nav": {
     "agentTeams": "Agent Link & Team",
@@ -44,6 +45,7 @@
     "packages": "软件包",
     "tenants": "租户",
     "backupRestore": "备份与恢复",
-    "workstations": "工作站"
+    "workstations": "工作站",
+    "screenfizz": "ScreenFizz"
   }
 }

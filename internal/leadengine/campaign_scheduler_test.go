@@ -84,3 +84,21 @@ func TestCampaignNotDueOnWeekend(t *testing.T) {
 		t.Fatal("campaign should not be due on Saturday")
 	}
 }
+
+func TestParseScheduledCampaignDoesNotRequireApifyConfig(t *testing.T) {
+	t.Parallel()
+
+	campaign, err := parseScheduledCampaign(Campaign{
+		"id":            "campaign-1",
+		"name":          "Influocial",
+		"enabled":       true,
+		"schedule_time": "09:00:00",
+		"timezone":      "Europe/London",
+	})
+	if err != nil {
+		t.Fatalf("parseScheduledCampaign() error = %v", err)
+	}
+	if campaign.Name != "Influocial" {
+		t.Fatalf("campaign.Name = %q, want Influocial", campaign.Name)
+	}
+}

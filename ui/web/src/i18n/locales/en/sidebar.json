@@ -6,7 +6,8 @@
     "capabilities": "Capabilities",
     "data": "Data",
     "monitoring": "Monitoring",
-    "system": "System"
+    "system": "System",
+    "marketing": "Marketing"
   },
   "nav": {
     "overview": "Overview",
@@ -45,6 +46,7 @@
     "packages": "Packages",
     "tenants": "Tenants",
     "backupRestore": "Backup & Restore",
-    "workstations": "Workstations"
+    "workstations": "Workstations",
+    "screenfizz": "ScreenFizz"
   }
 }

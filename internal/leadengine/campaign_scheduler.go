@@ -66,17 +66,12 @@ func NewCampaignSchedulerFromEnv(outputDir string) (*CampaignScheduler, error) {
 	if err != nil {
 		return nil, err
 	}
-	apify, err := NewApifyClientFromEnv()
-	if err != nil {
-		return nil, err
-	}
 	sender, err := NewTestSenderFromEnv()
 	if err != nil {
 		return nil, err
 	}
 	return &CampaignScheduler{
 		Supabase:  supabase,
-		Apify:     apify,
 		Sender:    sender,
 		OutputDir: outputDir,
 		Now:       time.Now,
@@ -180,24 +175,7 @@ func campaignSendResumeDue(now time.Time, campaign ScheduledCampaign) bool {
 func (s *CampaignScheduler) runCampaign(ctx context.Context, campaign ScheduledCampaign) (CampaignRunCounts, error) {
 	counts := CampaignRunCounts{}
 
-	dataset, err := s.Apify.Run(ctx, &ActiveCampaign{
-		Name:        campaign.Name,
-		ApifyAPIURL: campaign.ApifyAPIURL,
-		ApifyInput:  campaign.ApifyInput,
-	})
-	if err != nil {
-		return counts, err
-	}
-	job := &Job{OutputDir: s.OutputDir, Now: s.now}
-	if _, err := job.saveDataset(campaign.Name, dataset); err != nil {
-		return counts, err
-	}
-
-	importResult, err := s.Supabase.ImportLeads(ctx, campaign.Name, dataset)
-	if err != nil {
-		return counts, err
-	}
-	counts.ImportCount = importResult.Imported
+	slog.Info("leadengine.scheduler.import_skipped", "campaign", campaign.Name, "reason", "apify disabled")
 
 	qualifyResult, err := s.Supabase.QualifyNewLeadsForCampaign(ctx, campaign.Name)
 	if err != nil {
@@ -289,13 +267,7 @@ func parseScheduledCampaign(row Campaign) (ScheduledCampaign, error) {
 		return ScheduledCampaign{}, errors.New("active campaign has no name")
 	}
 	apiURL, _ := row["apify_api_url"].(string)
-	if strings.TrimSpace(apiURL) == "" {
-		return ScheduledCampaign{}, errors.New("active campaign has no apify_api_url")
-	}
-	input, err := campaignInput(row["apify_input"])
-	if err != nil {
-		return ScheduledCampaign{}, err
-	}
+	input := scheduledCampaignInput(row["apify_input"])
 	lastRunAt, err := campaignLastRunAt(row["last_run_at"])
 	if err != nil {
 		return ScheduledCampaign{}, err
@@ -324,6 +296,23 @@ func parseScheduledCampaign(row Campaign) (ScheduledCampaign, error) {
 		BounceThreshold:    floatValue(row["bounce_pause_threshold"]),
 		BounceMinSample:    intValue(row["bounce_min_sample"]),
 	}, nil
+}
+
+func scheduledCampaignInput(value any) json.RawMessage {
+	if value == nil {
+		return nil
+	}
+	if text, ok := value.(string); ok {
+		if !json.Valid([]byte(text)) {
+			return nil
+		}
+		return json.RawMessage(text)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	return encoded
 }
 
 func campaignDue(now time.Time, campaign ScheduledCampaign) bool {

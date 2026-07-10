@@ -58,6 +58,7 @@ func init() {
 	rootCmd.AddCommand(authCmd())
 	rootCmd.AddCommand(setupCmd())
 	rootCmd.AddCommand(leadEngineCmd())
+	rootCmd.AddCommand(screenFizzCmd())
 }
 
 func versionCmd() *cobra.Command {

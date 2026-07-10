@@ -123,6 +123,9 @@ const WorkstationsPage = lazyWithRetry(() =>
 const TenantSelectorPage = lazyWithRetry(() =>
   import("@/pages/login/tenant-selector").then((m) => ({ default: m.TenantSelectorPage })),
 );
+const ScreenFizzPage = lazyWithRetry(() =>
+  import("@/pages/screenfizz/screenfizz-page").then((m) => ({ default: m.ScreenFizzPage })),
+);
 
 function PageLoader() {
   return (
@@ -212,6 +215,7 @@ export function AppRoutes() {
           <Route path={ROUTES.MEMORY} element={<MemoryPage />} />
           <Route path={ROUTES.VAULT} element={<VaultPage />} />
           <Route path={ROUTES.KNOWLEDGE_GRAPH} element={<KnowledgeGraphPage />} />
+          <Route path={ROUTES.SCREENFIZZ} element={<RequireAdmin><ScreenFizzPage /></RequireAdmin>} />
         </Route>
 
         {/* Catch-all → overview */}

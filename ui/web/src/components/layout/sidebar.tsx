@@ -32,6 +32,7 @@ import {
   Webhook,
   Cable,
   MonitorCog,
+  Megaphone,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SidebarGroup } from "./sidebar-group";
@@ -133,6 +134,12 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
           <SidebarItem to={ROUTES.ACTIVITY} icon={ClipboardList} label={t("nav.activity")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.LOGS} icon={Terminal} label={t("nav.logs")} collapsed={collapsed} />
         </SidebarGroup>
+
+        {isAdmin && (
+        <SidebarGroup label={t("groups.marketing")} collapsed={collapsed}>
+          <SidebarItem to={ROUTES.SCREENFIZZ} icon={Megaphone} label={t("nav.screenfizz")} collapsed={collapsed} />
+        </SidebarGroup>
+        )}
 
         {isAdmin && (
         <SidebarGroup label={t("groups.system")} collapsed={collapsed}>

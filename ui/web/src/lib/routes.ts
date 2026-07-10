@@ -50,4 +50,5 @@ export const ROUTES = {
   WEBHOOKS: "/webhooks",
   WORKSTATIONS: "/workstations",
   WORKSTATION_DETAIL: "/workstations/:id",
+  SCREENFIZZ: "/marketing/screenfizz",
 } as const;
