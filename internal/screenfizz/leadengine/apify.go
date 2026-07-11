@@ -74,6 +74,25 @@ func DefaultApifyCampaign(cfg Config, county string) (ApifyCampaign, error) {
 	}, nil
 }
 
+// BoundedApifyCampaign runs the standard ScreenFizz categories for one county
+// with a caller-selected cap per category.
+func BoundedApifyCampaign(cfg Config, county string, maxPerSearch int) (ApifyCampaign, error) {
+	if maxPerSearch <= 0 {
+		return ApifyCampaign{}, errors.New("max results per category must be positive")
+	}
+	input := DefaultApifyInput(county)
+	input.MaxCrawledPlacesPerSearch = maxPerSearch
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return ApifyCampaign{}, err
+	}
+	return ApifyCampaign{
+		Name:        "ScreenFizz " + strings.TrimSpace(county) + " Bounded Businesses",
+		ApifyAPIURL: cfg.ApifyAPIURL,
+		ApifyInput:  encoded,
+	}, nil
+}
+
 // TestApifyCampaign is a small, fixed actor run for verifying the ScreenFizz
 // Apify-to-Supabase path without using the full production category set.
 func TestApifyCampaign(cfg Config, county string) (ApifyCampaign, error) {

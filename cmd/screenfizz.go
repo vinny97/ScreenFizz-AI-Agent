@@ -145,6 +145,35 @@ func screenFizzLeadEngineCmd() *cobra.Command {
 			return nil
 		},
 	})
+	var county string
+	var maxPerCategory int
+	boundedRunCmd := &cobra.Command{
+		Use:   "run-batch",
+		Short: "Run a bounded ScreenFizz Apify import for one county",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := screenfizzleadengine.ConfigFromEnv()
+			if err != nil {
+				return err
+			}
+			runner := screenfizzleadengine.NewRunner(cfg)
+			campaign, err := screenfizzleadengine.BoundedApifyCampaign(cfg, county, maxPerCategory)
+			if err != nil {
+				return err
+			}
+			result, err := runner.RunCampaign(cmd.Context(), campaign)
+			if err != nil {
+				return err
+			}
+			printScreenFizzImportSummary(cmd, result)
+			return nil
+		},
+	}
+	boundedRunCmd.Flags().StringVar(&county, "county", "", "county to search")
+	boundedRunCmd.Flags().IntVar(&maxPerCategory, "max-per-category", 0, "maximum results per category")
+	_ = boundedRunCmd.MarkFlagRequired("county")
+	_ = boundedRunCmd.MarkFlagRequired("max-per-category")
+	cmd.AddCommand(boundedRunCmd)
 	return cmd
 }
 

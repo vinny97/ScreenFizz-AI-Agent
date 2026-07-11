@@ -695,6 +695,7 @@ func runGateway() {
 		server.AddHTTPHandler(leadEngineWebhooks)
 	}
 	startLeadEngineScheduler(ctx)
+	startScreenFizzScheduler(ctx)
 
 	server.StartUpdateChecker(ctx)
 
