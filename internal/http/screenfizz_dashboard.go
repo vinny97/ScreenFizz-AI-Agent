@@ -62,8 +62,19 @@ func (h *ScreenFizzDashboardHandler) handleDashboard(w stdhttp.ResponseWriter, r
 		if generated, _ := p["email_generated"].(bool); generated {
 			stats["emails_generated"]++
 		}
+		if screenFizzDashboardValuePresent(p["opened_at"]) {
+			stats["opened"]++
+		}
+		if screenFizzDashboardValuePresent(p["clicked_at"]) {
+			stats["clicked"]++
+		}
 	}
 	writeJSON(w, stdhttp.StatusOK, map[string]any{"stats": stats, "businesses": businesses, "prospects": prospects})
+}
+
+func screenFizzDashboardValuePresent(value any) bool {
+	text, ok := value.(string)
+	return ok && strings.TrimSpace(text) != ""
 }
 
 func (h *ScreenFizzDashboardHandler) handleProspectUpdate(w stdhttp.ResponseWriter, r *stdhttp.Request) {
