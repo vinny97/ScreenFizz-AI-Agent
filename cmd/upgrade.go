@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -223,6 +225,11 @@ func checkSchemaOrAutoUpgrade(dsn string) error {
 	}
 
 	if s.Dirty {
+		if err := recoverDirtySchemaOnStartup(db, dsn, s); err == nil {
+			return nil
+		} else if !errors.Is(err, errDirtySchemaRecoveryNotRequested) {
+			return err
+		}
 		return errors.New(upgrade.FormatError(s))
 	}
 
@@ -261,4 +268,50 @@ func checkSchemaOrAutoUpgrade(dsn string) error {
 	}
 
 	return errors.New(upgrade.FormatError(s))
+}
+
+var errDirtySchemaRecoveryNotRequested = errors.New("dirty schema recovery not requested")
+
+// recoverDirtySchemaOnStartup provides a deliberately narrow recovery path for
+// hosts where an operator cannot open a shell. It only runs when the requested
+// prior version exactly matches the dirty migration version minus one. Once the
+// schema is clean, the environment setting is ignored on future starts.
+func recoverDirtySchemaOnStartup(db *sql.DB, dsn string, status *upgrade.SchemaStatus) error {
+	requested := strings.TrimSpace(os.Getenv("GOCLAW_RECOVER_DIRTY_MIGRATION"))
+	if requested == "" {
+		return errDirtySchemaRecoveryNotRequested
+	}
+	version, err := strconv.ParseUint(requested, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid GOCLAW_RECOVER_DIRTY_MIGRATION: %w", err)
+	}
+	if status.CurrentVersion == 0 || version != uint64(status.CurrentVersion-1) {
+		return fmt.Errorf("refusing dirty schema recovery: requested version %d does not match dirty version %d", version, status.CurrentVersion)
+	}
+
+	slog.Warn("schema recovery: forcing prior migration version", "dirty_version", status.CurrentVersion, "force_version", version)
+	m, err := newMigrator(dsn)
+	if err != nil {
+		return fmt.Errorf("schema recovery: create migrator: %w", err)
+	}
+	defer m.Close()
+	if err := m.Force(int(version)); err != nil {
+		return fmt.Errorf("schema recovery: force version: %w", err)
+	}
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("schema recovery: migrate up: %w", err)
+	}
+	updated, err := upgrade.CheckSchema(db)
+	if err != nil {
+		return fmt.Errorf("schema recovery: check final schema: %w", err)
+	}
+	if !updated.Compatible {
+		return errors.New(upgrade.FormatError(updated))
+	}
+	count, err := upgrade.RunPendingHooks(context.Background(), db)
+	if err != nil {
+		return fmt.Errorf("schema recovery: data hooks: %w", err)
+	}
+	slog.Info("schema recovery complete", "version", updated.CurrentVersion, "data_hooks", count)
+	return nil
 }
