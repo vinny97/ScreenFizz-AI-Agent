@@ -6,6 +6,7 @@ func TestConfigFromEnvUsesScreenFizzEnvAndTables(t *testing.T) {
 	t.Setenv("SCREENFIZZ_SUPABASE_URL", "https://example.supabase.co")
 	t.Setenv("SCREENFIZZ_SUPABASE_SERVICE_ROLE_KEY", "service-key")
 	t.Setenv("SCREENFIZZ_BREVO_API_KEY", "screenfizz-brevo-key")
+	t.Setenv("SCREENFIZZ_SENDER_EMAIL", "hello@screenfizz.co.uk")
 
 	cfg, err := ConfigFromEnv()
 	if err != nil {
@@ -37,5 +38,11 @@ func TestConfigFromEnvUsesScreenFizzEnvAndTables(t *testing.T) {
 	}
 	if cfg.BrevoAPIKey != "screenfizz-brevo-key" {
 		t.Fatalf("BrevoAPIKey = %q", cfg.BrevoAPIKey)
+	}
+	if cfg.BrevoSenderName != "ScreenFizz" || cfg.BrevoSenderEmail != "hello@screenfizz.co.uk" {
+		t.Fatalf("Brevo sender = %q <%q>", cfg.BrevoSenderName, cfg.BrevoSenderEmail)
+	}
+	if cfg.DailySendLimit != defaultDailySendLimit {
+		t.Fatalf("DailySendLimit = %d, want %d", cfg.DailySendLimit, defaultDailySendLimit)
 	}
 }

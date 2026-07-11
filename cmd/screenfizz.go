@@ -78,6 +78,23 @@ func screenFizzCmd() *cobra.Command {
 			return screenfizzleadengine.ReviewProspects(cmd.Context(), cfg, cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "send",
+		Short: "Send approved ScreenFizz emails via Brevo",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := screenfizzleadengine.ConfigFromEnv()
+			if err != nil {
+				return err
+			}
+			result, err := screenfizzleadengine.SendApprovedProspects(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Sent: %d\nFailed: %d\n", result.Sent, result.Failed)
+			return err
+		},
+	})
 	return cmd
 }
 

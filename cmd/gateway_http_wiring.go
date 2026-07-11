@@ -49,6 +49,7 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	// the required environment variables are configured.
 	d.server.AddHTTPHandler(httpapi.NewChatwootHandlerFromEnv())
 	d.server.AddHTTPHandler(httpapi.NewScreenFizzDashboardHandlerFromEnv())
+	d.server.AddHTTPHandler(httpapi.NewScreenFizzBrevoWebhookHandlerFromEnv())
 	if h.providers != nil {
 		h.providers.SetAPIBaseFallback(d.cfg.Providers.APIBaseForType)
 	}

@@ -3,6 +3,7 @@ package leadengine
 import (
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -14,6 +15,7 @@ const (
 	defaultAIAPIURL         = "https://api.openai.com/v1/chat/completions"
 	defaultAIModel          = "gpt-4o-mini"
 	defaultBrevoAPIURL      = "https://api.brevo.com"
+	defaultDailySendLimit   = 30
 	defaultPromptsTable     = "screenfizz_prompts"
 	defaultApifyAPIURL      = "https://api.apify.com/v2/actors/compass~crawler-google-places/runs"
 )
@@ -32,6 +34,10 @@ type Config struct {
 	AIModel                string
 	BrevoAPIKey            string
 	BrevoAPIURL            string
+	BrevoSenderName        string
+	BrevoSenderEmail       string
+	BrevoWebhookSecret     string
+	DailySendLimit         int
 	PromptsTable           string
 	ApifyAPIURL            string
 	ApifyAPIToken          string
@@ -50,6 +56,10 @@ func ConfigFromEnv() (Config, error) {
 		AIModel:                envOrDefault("SCREENFIZZ_AI_MODEL", defaultAIModel),
 		BrevoAPIKey:            strings.TrimSpace(os.Getenv("SCREENFIZZ_BREVO_API_KEY")),
 		BrevoAPIURL:            envOrDefault("SCREENFIZZ_BREVO_API_URL", defaultBrevoAPIURL),
+		BrevoSenderName:        envOrDefault("SCREENFIZZ_SENDER_NAME", "ScreenFizz"),
+		BrevoSenderEmail:       strings.TrimSpace(os.Getenv("SCREENFIZZ_SENDER_EMAIL")),
+		BrevoWebhookSecret:     strings.TrimSpace(os.Getenv("SCREENFIZZ_BREVO_WEBHOOK_SECRET")),
+		DailySendLimit:         envPositiveIntOrDefault("SCREENFIZZ_DAILY_SEND_LIMIT", defaultDailySendLimit),
 		PromptsTable:           envOrDefault("SCREENFIZZ_PROMPTS_TABLE", defaultPromptsTable),
 		ApifyAPIURL:            envOrDefault("SCREENFIZZ_APIFY_API_URL", defaultApifyAPIURL),
 		ApifyAPIToken:          strings.TrimSpace(os.Getenv("APIFY_API_TOKEN")),
@@ -66,6 +76,14 @@ func ConfigFromEnv() (Config, error) {
 func envOrDefault(key string, fallback string) string {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func envPositiveIntOrDefault(key string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key)))
+	if err != nil || value <= 0 {
 		return fallback
 	}
 	return value

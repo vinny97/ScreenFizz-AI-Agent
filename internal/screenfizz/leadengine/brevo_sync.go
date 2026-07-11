@@ -70,7 +70,12 @@ func SyncBrevoContacts(ctx context.Context, cfg Config) error {
 			return err
 		}
 		if len(prospects) == 0 {
-			return nil
+			if strings.TrimSpace(cfg.BrevoSenderEmail) == "" {
+				slog.Warn("screenfizz.email.send_skipped", "reason", "SCREENFIZZ_SENDER_EMAIL is not configured")
+				return nil
+			}
+			_, err := SendApprovedProspects(ctx, cfg)
+			return err
 		}
 		failed := 0
 		for _, prospect := range prospects {
