@@ -11,11 +11,9 @@ import { useHttp } from "@/hooks/use-ws";
 
 type Row = Record<string, any>;
 type Dashboard = { stats: Record<string, number>; businesses: Row[]; prospects: Row[] };
-const tabs = ["overview", "businesses", "prospects", "review", "approved", "analytics"] as const;
 
 function businessOf(row: Row): Row { return row.screenfizz_businesses ?? {}; }
 function text(value: unknown) { return typeof value === "string" ? value : ""; }
-function has(row: Row, key: string) { return text(businessOf(row)[key]).trim() !== ""; }
 function prettyDate(value: unknown) { const date = text(value); return date ? new Date(date).toLocaleDateString() : "—"; }
 
 export function ScreenFizzPage() {
