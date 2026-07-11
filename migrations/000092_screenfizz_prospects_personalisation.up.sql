@@ -1,2 +1,2 @@
 ALTER TABLE screenfizz_prospects
-    ADD COLUMN personalisation_line text;
+    ADD COLUMN IF NOT EXISTS personalisation_line text;
