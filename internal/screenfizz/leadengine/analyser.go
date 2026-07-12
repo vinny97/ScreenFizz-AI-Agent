@@ -67,8 +67,8 @@ func newAnalysisClient(cfg Config) (*analysisClient, error) {
 	}, nil
 }
 
-// AnalyseProspects sends parsed prospect data to the configured AI, stores a
-// validated analysis, then advances the completed prospects to email drafting.
+// AnalyseProspects sends parsed prospect data to the configured AI and stores
+// the validated analysis.
 func AnalyseProspects(ctx context.Context, cfg Config) error {
 	client, err := newAnalysisClient(cfg)
 	if err != nil {
@@ -80,7 +80,7 @@ func AnalyseProspects(ctx context.Context, cfg Config) error {
 			return err
 		}
 		if len(prospects) == 0 {
-			return GenerateProspectEmails(ctx, cfg)
+			return nil
 		}
 		failed := 0
 		for _, prospect := range prospects {

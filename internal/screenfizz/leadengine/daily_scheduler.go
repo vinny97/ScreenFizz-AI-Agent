@@ -88,11 +88,11 @@ func (s *DailyScheduler) run(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	result, err := NewRunner(s.Config).RunCampaign(ctx, campaign)
+	result, err := RunPipeline(ctx, s.Config, campaign)
 	if err != nil {
 		return err
 	}
-	slog.Info("screenfizz.scheduler.import_completed", "county", county, "raw_target", perCategory*len(defaultSearchStrings), "found", result.TotalReturned, "inserted", result.Inserted, "duplicates_skipped", result.DuplicatesSkipped)
+	slog.Info("screenfizz.scheduler.pipeline_completed", "county", county, "raw_target", perCategory*len(defaultSearchStrings), "found", result.Import.TotalReturned, "inserted", result.Import.Inserted, "duplicates_skipped", result.Import.DuplicatesSkipped, "auto_approved", result.AutoApproved, "sent", result.Sent, "failed", result.Failed)
 	return nil
 }
 

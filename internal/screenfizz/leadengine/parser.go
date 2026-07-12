@@ -31,7 +31,7 @@ type parsedWebsite struct {
 }
 
 // ParseProspects extracts plain HTML metadata for every prospect with saved
-// homepage HTML that has not yet been parsed, then analyses parsed prospects.
+// homepage HTML that has not yet been parsed.
 func ParseProspects(ctx context.Context, cfg Config) error {
 	for {
 		prospects, err := nextUnparsedProspects(ctx, cfg)
@@ -39,7 +39,7 @@ func ParseProspects(ctx context.Context, cfg Config) error {
 			return err
 		}
 		if len(prospects) == 0 {
-			return AnalyseProspects(ctx, cfg)
+			return nil
 		}
 		failed := 0
 		for _, prospect := range prospects {

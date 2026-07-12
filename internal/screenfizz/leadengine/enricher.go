@@ -33,11 +33,35 @@ type enrichmentProspect struct {
 // unenriched ScreenFizz prospects. Individual download failures remain
 // unenriched so a future command run can retry them.
 func EnrichProspects(ctx context.Context, cfg Config) error {
+	_, _, err := enrichProspectBatch(ctx, cfg)
+	return err
+}
+
+// EnrichAllProspects processes every currently queued prospect. A failed
+// homepage download stops this run so it can be retried by the next schedule
+// rather than silently marking the prospect complete.
+func EnrichAllProspects(ctx context.Context, cfg Config) error {
+	for {
+		processed, failed, err := enrichProspectBatch(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		if processed == 0 {
+			return nil
+		}
+		if failed > 0 {
+			return fmt.Errorf("failed to download or save %d ScreenFizz prospect websites", failed)
+		}
+	}
+}
+
+func enrichProspectBatch(ctx context.Context, cfg Config) (int, int, error) {
 	prospects, err := nextUnenrichedProspects(ctx, cfg)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	websiteClient := security.NewRedirectFollowingSafeClient(30*time.Second, 5)
+	failed := 0
 	for _, prospect := range prospects {
 		businessName := strings.TrimSpace(prospect.Business.BusinessName)
 		slog.Info("Processing: " + businessName)
@@ -45,17 +69,19 @@ func EnrichProspects(ctx context.Context, cfg Config) error {
 		html, err := downloadHomepage(ctx, websiteClient, prospect.Business.Website)
 		if err != nil {
 			slog.Error("Failed to download website", "business_name", businessName, "error", err)
+			failed++
 			continue
 		}
 		slog.Info("Downloaded website", "business_name", businessName)
 
 		if err := saveWebsiteHTML(ctx, cfg, prospect.ID, html); err != nil {
 			slog.Error("Failed to save HTML", "business_name", businessName, "error", err)
+			failed++
 			continue
 		}
 		slog.Info("Saved HTML", "business_name", businessName)
 	}
-	return nil
+	return len(prospects), failed, nil
 }
 
 func nextUnenrichedProspects(ctx context.Context, cfg Config) ([]enrichmentProspect, error) {

@@ -15,7 +15,7 @@ func TestReviewProspectsApprovesEditsAndSkips(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			if r.URL.Query().Get("status") != "eq.pending_review" || r.URL.Query().Get("limit") != "20" {
+			if r.URL.Query().Get("status") != "eq.ready_to_send" || r.URL.Query().Get("limit") != "20" {
 				t.Fatalf("unexpected review query: %s", r.URL.RawQuery)
 			}
 			_, _ = w.Write([]byte(`[
@@ -48,7 +48,7 @@ func TestReviewProspectsApprovesEditsAndSkips(t *testing.T) {
 	if !strings.Contains(updates["eq.one"], `"status":"approved"`) {
 		t.Fatalf("approval update = %s", updates["eq.one"])
 	}
-	if !strings.Contains(updates["eq.two"], `"email_subject":"Edited subject"`) || !strings.Contains(updates["eq.two"], `"email_body":"Edited line one\nEdited line two"`) || !strings.Contains(updates["eq.two"], `"status":"pending_review"`) {
+	if !strings.Contains(updates["eq.two"], `"email_subject":"Edited subject"`) || !strings.Contains(updates["eq.two"], `"email_body":"Edited line one\nEdited line two"`) || !strings.Contains(updates["eq.two"], `"status":"ready_to_send"`) {
 		t.Fatalf("edit update = %s", updates["eq.two"])
 	}
 	if !strings.Contains(updates["eq.three"], `"status":"skipped"`) {

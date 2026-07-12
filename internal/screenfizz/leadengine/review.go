@@ -79,7 +79,7 @@ func nextPendingReviewProspects(ctx context.Context, cfg Config) ([]reviewProspe
 	endpoint := strings.TrimRight(cfg.SupabaseURL, "/") + "/rest/v1/" + url.PathEscape(cfg.ProspectsTable)
 	query := url.Values{
 		"select": {"id,business_summary,email_subject,email_body,screenfizz_businesses!inner(business_name,email)"},
-		"status": {"eq.pending_review"},
+		"status": {"eq.ready_to_send"},
 		"order":  {"created_at.asc"},
 		"limit":  {fmt.Sprintf("%d", reviewBatchSize)},
 	}
@@ -148,7 +148,7 @@ func editReviewProspect(ctx context.Context, cfg Config, reader *bufio.Reader, o
 	return updateReviewProspect(ctx, cfg, prospect.ID, map[string]any{
 		"email_subject": subject,
 		"email_body":    body,
-		"status":        "pending_review",
+		"status":        "ready_to_send",
 	})
 }
 

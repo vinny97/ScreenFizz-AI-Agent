@@ -66,7 +66,7 @@ func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(body), `"email_subject":"A quick idea for Example Restaurant"`) || !strings.Contains(string(body), `"email_generated":true`) || !strings.Contains(string(body), `"status":"pending_review"`) || strings.Contains(string(body), "brevo") {
+			if !strings.Contains(string(body), `"email_subject":"A quick idea for Example Restaurant"`) || !strings.Contains(string(body), `"email_generated":true`) || !strings.Contains(string(body), `"status":"ready_to_send"`) || strings.Contains(string(body), "brevo") {
 				t.Fatalf("unexpected generated email update: %s", body)
 			}
 			updated = true

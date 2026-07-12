@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSendApprovedProspectsHonorsDailyLimitAndContinuesAfterFailure(t *testing.T) {
@@ -19,7 +20,8 @@ func TestSendApprovedProspectsHonorsDailyLimitAndContinuesAfterFailure(t *testin
 			switch r.Method {
 			case http.MethodGet:
 				if r.URL.Query().Get("select") == "id" {
-					if r.URL.Query().Get("sent_at") != "gte."+"2026-07-11T00:00:00Z" {
+					dayStart := time.Now().UTC().Truncate(24 * time.Hour).Format(time.RFC3339)
+					if r.URL.Query().Get("sent_at") != "gte."+dayStart {
 						t.Fatalf("daily count sent_at filter = %q", r.URL.Query()["sent_at"])
 					}
 					w.Header().Set("Content-Range", "0-0/2")

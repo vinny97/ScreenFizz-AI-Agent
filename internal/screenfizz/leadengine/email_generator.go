@@ -51,7 +51,7 @@ func GenerateProspectEmails(ctx context.Context, cfg Config) error {
 			return err
 		}
 		if len(prospects) == 0 {
-			return SyncBrevoContacts(ctx, cfg)
+			return nil
 		}
 		failed := 0
 		for _, prospect := range prospects {
@@ -150,7 +150,7 @@ func saveGeneratedEmail(ctx context.Context, cfg Config, prospectID string, emai
 		"email_subject":   email.Subject,
 		"email_body":      email.Body,
 		"email_generated": true,
-		"status":          "pending_review",
+		"status":          "ready_to_send",
 	})
 	if err != nil {
 		return fmt.Errorf("encode generated email: %w", err)

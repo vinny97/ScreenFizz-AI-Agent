@@ -50,7 +50,7 @@ func (h *ScreenFizzDashboardHandler) handleDashboard(w stdhttp.ResponseWriter, r
 	for _, p := range prospects {
 		status, _ := p["status"].(string)
 		switch status {
-		case "pending_review":
+		case "ready_to_send", "pending_review":
 			stats["pending_review"]++
 		case "approved":
 			stats["approved"]++
@@ -105,10 +105,10 @@ func (h *ScreenFizzDashboardHandler) handleProspectUpdate(w stdhttp.ResponseWrit
 	}
 	if input.Regenerate {
 		values["email_generated"] = false
-		values["status"] = "pending_review"
+		values["status"] = "ready_to_send"
 	} else if input.Status != "" {
 		switch input.Status {
-		case "pending_review", "approved", "skipped":
+		case "ready_to_send", "pending_review", "approved", "skipped":
 			values["status"] = input.Status
 		default:
 			writeJSON(w, stdhttp.StatusBadRequest, map[string]string{"error": "invalid status"})
