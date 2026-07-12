@@ -19,8 +19,6 @@ import (
 type PipelineResult struct {
 	Import       RunResult
 	AutoApproved int
-	Sent         int
-	Failed       int
 }
 
 // RunPipeline executes the complete ScreenFizz lead flow. Generated drafts
@@ -76,13 +74,6 @@ func RunPipeline(ctx context.Context, cfg Config, campaign ApifyCampaign) (Pipel
 	result.AutoApproved = approved
 	slog.Info("screenfizz.pipeline.stage_completed", "stage", "auto_approve", "approved", approved)
 
-	sent, err := SendApprovedProspects(ctx, cfg)
-	if err != nil {
-		return result, err
-	}
-	result.Sent = sent.Sent
-	result.Failed = sent.Failed
-	slog.Info("screenfizz.pipeline.stage_completed", "stage", "send", "sent", sent.Sent, "failed", sent.Failed)
 	return result, nil
 }
 

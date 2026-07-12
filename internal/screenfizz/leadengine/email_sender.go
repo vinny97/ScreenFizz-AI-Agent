@@ -35,6 +35,16 @@ type approvedEmailProspect struct {
 // approved, unsent ScreenFizz emails. Failed emails deliberately remain
 // approved so a later run can retry them.
 func SendApprovedProspects(ctx context.Context, cfg Config) (SendApprovedResult, error) {
+	return sendApprovedProspects(ctx, cfg, 0)
+}
+
+// SendOneApprovedProspect sends at most one approved prospect. It is used by
+// the paced scheduler to avoid sending a whole day's allowance in one burst.
+func SendOneApprovedProspect(ctx context.Context, cfg Config) (SendApprovedResult, error) {
+	return sendApprovedProspects(ctx, cfg, 1)
+}
+
+func sendApprovedProspects(ctx context.Context, cfg Config, maximum int) (SendApprovedResult, error) {
 	client, err := newBrevoClient(cfg)
 	if err != nil {
 		return SendApprovedResult{}, err
@@ -55,6 +65,9 @@ func SendApprovedProspects(ctx context.Context, cfg Config) (SendApprovedResult,
 	if remaining <= 0 {
 		slog.Info("screenfizz.email.daily_limit_reached", "daily_limit", limit, "sent_today", sentToday)
 		return SendApprovedResult{}, nil
+	}
+	if maximum > 0 && maximum < remaining {
+		remaining = maximum
 	}
 
 	prospects, err := nextApprovedEmailProspects(ctx, cfg, remaining)

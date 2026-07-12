@@ -15,7 +15,7 @@ const (
 	defaultAIAPIURL         = "https://api.openai.com/v1/chat/completions"
 	defaultAIModel          = "gpt-4o-mini"
 	defaultBrevoAPIURL      = "https://api.brevo.com"
-	defaultDailySendLimit   = 30
+	defaultDailySendLimit   = 200
 	defaultPromptsTable     = "screenfizz_prompts"
 	defaultApifyAPIURL      = "https://api.apify.com/v2/actors/compass~crawler-google-places/runs"
 )

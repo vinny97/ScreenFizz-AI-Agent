@@ -14,4 +14,10 @@ func startScreenFizzScheduler(ctx context.Context) {
 		return
 	}
 	scheduler.Start(ctx)
+	sendScheduler, err := screenfizz.NewSendSchedulerFromEnv()
+	if err != nil {
+		slog.Info("screenfizz.send_scheduler.disabled", "reason", err)
+		return
+	}
+	sendScheduler.Start(ctx)
 }
