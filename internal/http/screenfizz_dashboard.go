@@ -18,6 +18,12 @@ import (
 // ScreenFizzDashboardHandler exposes the internal, review-only ScreenFizz CRM.
 type ScreenFizzDashboardHandler struct{}
 
+// Keep the dashboard payload deliberately small. In particular, website_html
+// and body_text may each be megabytes and are not rendered by this page.
+const screenFizzBusinessDashboardFields = "id,business_name,category,website,email,phone,address,town,postcode,google_maps_url,rating,review_count,source,contacted,created_at"
+
+const screenFizzProspectDashboardFields = "id,business_id,enriched,parsed,analysed,business_summary,business_type,recommended_use_case,personalisation_line,likely_needs_digital_signage,email_generated,email_subject,email_body,status,brevo_contact_id,brevo_synced_at,sent_at,brevo_message_id,delivered_at,opened_at,clicked_at,bounced_at,unsubscribed_at,last_event,created_at,screenfizz_businesses(id,business_name,category,website,email,phone,address,town,postcode,google_maps_url,rating,review_count,source,contacted,created_at)"
+
 func NewScreenFizzDashboardHandlerFromEnv() *ScreenFizzDashboardHandler {
 	return &ScreenFizzDashboardHandler{}
 }
@@ -36,12 +42,12 @@ func (h *ScreenFizzDashboardHandler) handleDashboard(w stdhttp.ResponseWriter, r
 		writeJSON(w, stdhttp.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 		return
 	}
-	businesses, err := screenFizzRows(r.Context(), cfg, cfg.BusinessesTable, "*")
+	businesses, err := screenFizzRows(r.Context(), cfg, cfg.BusinessesTable, screenFizzBusinessDashboardFields)
 	if err != nil {
 		writeJSON(w, stdhttp.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	prospects, err := screenFizzRows(r.Context(), cfg, cfg.ProspectsTable, "*,screenfizz_businesses(*)")
+	prospects, err := screenFizzRows(r.Context(), cfg, cfg.ProspectsTable, screenFizzProspectDashboardFields)
 	if err != nil {
 		writeJSON(w, stdhttp.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
