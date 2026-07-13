@@ -41,7 +41,17 @@ func EnrichProspects(ctx context.Context, cfg Config) error {
 // homepage download stops this run so it can be retried by the next schedule
 // rather than silently marking the prospect complete.
 func EnrichAllProspects(ctx context.Context, cfg Config) error {
+	return EnrichProspectsUpTo(ctx, cfg, 0)
+}
+
+// EnrichProspectsUpTo runs the enrichment stage for at most maximum
+// prospects. A non-positive maximum processes all queued prospects.
+func EnrichProspectsUpTo(ctx context.Context, cfg Config, maximum int) error {
+	processedTotal := 0
 	for {
+		if maximum > 0 && processedTotal >= maximum {
+			return nil
+		}
 		processed, failed, err := enrichProspectBatch(ctx, cfg)
 		if err != nil {
 			return err
@@ -49,6 +59,7 @@ func EnrichAllProspects(ctx context.Context, cfg Config) error {
 		if processed == 0 {
 			return nil
 		}
+		processedTotal += processed
 		if failed > 0 {
 			return fmt.Errorf("failed to download or save %d ScreenFizz prospect websites", failed)
 		}
@@ -69,7 +80,10 @@ func enrichProspectBatch(ctx context.Context, cfg Config) (int, int, error) {
 		html, err := downloadHomepage(ctx, websiteClient, prospect.Business.Website)
 		if err != nil {
 			slog.Error("Failed to download website", "business_name", businessName, "error", err)
-			failed++
+			if err := skipWebsiteEnrichment(ctx, cfg, prospect.ID); err != nil {
+				slog.Error("Failed to skip inaccessible website", "business_name", businessName, "error", err)
+				failed++
+			}
 			continue
 		}
 		slog.Info("Downloaded website", "business_name", businessName)
@@ -82,6 +96,40 @@ func enrichProspectBatch(ctx context.Context, cfg Config) (int, int, error) {
 		slog.Info("Saved HTML", "business_name", businessName)
 	}
 	return len(prospects), failed, nil
+}
+
+// skipWebsiteEnrichment records an inaccessible homepage as permanently
+// skipped. Without this, the same broken website would block every future
+// scheduled pipeline run.
+func skipWebsiteEnrichment(ctx context.Context, cfg Config, prospectID string) error {
+	body, err := json.Marshal(map[string]any{
+		"enriched": true,
+		"status":   "skipped",
+	})
+	if err != nil {
+		return fmt.Errorf("encode inaccessible website update: %w", err)
+	}
+	endpoint := strings.TrimRight(cfg.SupabaseURL, "/") + "/rest/v1/" + url.PathEscape(cfg.ProspectsTable) + "?id=eq." + url.QueryEscape(prospectID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create inaccessible website update: %w", err)
+	}
+	setSupabaseHeaders(req, cfg)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Prefer", "return=minimal")
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("save inaccessible website update: %w", err)
+	}
+	responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	closeErr := resp.Body.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return fmt.Errorf("read inaccessible website update: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("save inaccessible website update: Supabase returned %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
+	}
+	return nil
 }
 
 func nextUnenrichedProspects(ctx context.Context, cfg Config) ([]enrichmentProspect, error) {

@@ -41,12 +41,30 @@ type rawGeneratedEmail struct {
 // GenerateProspectEmails stores a short, personal draft for each analysed
 // prospect that has not already received a generated email. It never sends it.
 func GenerateProspectEmails(ctx context.Context, cfg Config) error {
+	return generateProspectEmails(ctx, cfg, 0)
+}
+
+// GenerateProspectEmailsUpTo creates at most maximum new drafts. A
+// non-positive maximum generates every pending draft.
+func GenerateProspectEmailsUpTo(ctx context.Context, cfg Config, maximum int) error {
+	return generateProspectEmails(ctx, cfg, maximum)
+}
+
+func generateProspectEmails(ctx context.Context, cfg Config, maximum int) error {
 	client, err := newAnalysisClient(cfg)
 	if err != nil {
 		return err
 	}
+	processedTotal := 0
 	for {
-		prospects, err := nextEmailProspects(ctx, cfg)
+		if maximum > 0 && processedTotal >= maximum {
+			return nil
+		}
+		limit := emailGenerationBatchSize
+		if maximum > 0 && maximum-processedTotal < limit {
+			limit = maximum - processedTotal
+		}
+		prospects, err := nextEmailProspects(ctx, cfg, limit)
 		if err != nil {
 			return err
 		}
@@ -69,17 +87,18 @@ func GenerateProspectEmails(ctx context.Context, cfg Config) error {
 		if failed > 0 {
 			return fmt.Errorf("failed to generate or save %d ScreenFizz prospect emails", failed)
 		}
+		processedTotal += len(prospects)
 	}
 }
 
-func nextEmailProspects(ctx context.Context, cfg Config) ([]emailProspect, error) {
+func nextEmailProspects(ctx context.Context, cfg Config, limit int) ([]emailProspect, error) {
 	endpoint := strings.TrimRight(cfg.SupabaseURL, "/") + "/rest/v1/" + url.PathEscape(cfg.ProspectsTable)
 	query := url.Values{
 		"select":          {"id,business_summary,business_type,recommended_use_case,personalisation_line,screenfizz_businesses(business_name,category)"},
 		"analysed":        {"eq.true"},
 		"email_generated": {"eq.false"},
 		"order":           {"created_at.asc"},
-		"limit":           {fmt.Sprintf("%d", emailGenerationBatchSize)},
+		"limit":           {fmt.Sprintf("%d", limit)},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+query.Encode(), nil)
 	if err != nil {

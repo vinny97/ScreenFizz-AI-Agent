@@ -70,12 +70,30 @@ func newAnalysisClient(cfg Config) (*analysisClient, error) {
 // AnalyseProspects sends parsed prospect data to the configured AI and stores
 // the validated analysis.
 func AnalyseProspects(ctx context.Context, cfg Config) error {
+	return analyseProspects(ctx, cfg, 0)
+}
+
+// AnalyseProspectsUpTo runs AI analysis for at most maximum prospects. A
+// non-positive maximum processes all analysis-ready prospects.
+func AnalyseProspectsUpTo(ctx context.Context, cfg Config, maximum int) error {
+	return analyseProspects(ctx, cfg, maximum)
+}
+
+func analyseProspects(ctx context.Context, cfg Config, maximum int) error {
 	client, err := newAnalysisClient(cfg)
 	if err != nil {
 		return err
 	}
+	processedTotal := 0
 	for {
-		prospects, err := nextUnanalysedProspects(ctx, cfg)
+		if maximum > 0 && processedTotal >= maximum {
+			return nil
+		}
+		limit := analysisBatchSize
+		if maximum > 0 && maximum-processedTotal < limit {
+			limit = maximum - processedTotal
+		}
+		prospects, err := nextUnanalysedProspects(ctx, cfg, limit)
 		if err != nil {
 			return err
 		}
@@ -98,17 +116,18 @@ func AnalyseProspects(ctx context.Context, cfg Config) error {
 		if failed > 0 {
 			return fmt.Errorf("failed to analyse or save %d ScreenFizz prospects", failed)
 		}
+		processedTotal += len(prospects)
 	}
 }
 
-func nextUnanalysedProspects(ctx context.Context, cfg Config) ([]analysisProspect, error) {
+func nextUnanalysedProspects(ctx context.Context, cfg Config, limit int) ([]analysisProspect, error) {
 	endpoint := strings.TrimRight(cfg.SupabaseURL, "/") + "/rest/v1/" + url.PathEscape(cfg.ProspectsTable)
 	query := url.Values{
 		"select":   {"id,page_title,meta_description,h1,body_text,screenfizz_businesses(business_name,category)"},
 		"parsed":   {"eq.true"},
 		"analysed": {"eq.false"},
 		"order":    {"created_at.asc"},
-		"limit":    {fmt.Sprintf("%d", analysisBatchSize)},
+		"limit":    {fmt.Sprintf("%d", limit)},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+query.Encode(), nil)
 	if err != nil {

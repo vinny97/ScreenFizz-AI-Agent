@@ -33,8 +33,26 @@ type parsedWebsite struct {
 // ParseProspects extracts plain HTML metadata for every prospect with saved
 // homepage HTML that has not yet been parsed.
 func ParseProspects(ctx context.Context, cfg Config) error {
+	return parseProspects(ctx, cfg, 0)
+}
+
+// ParseProspectsUpTo runs parsing for at most maximum prospects. A
+// non-positive maximum processes all parsed-ready prospects.
+func ParseProspectsUpTo(ctx context.Context, cfg Config, maximum int) error {
+	return parseProspects(ctx, cfg, maximum)
+}
+
+func parseProspects(ctx context.Context, cfg Config, maximum int) error {
+	processedTotal := 0
 	for {
-		prospects, err := nextUnparsedProspects(ctx, cfg)
+		if maximum > 0 && processedTotal >= maximum {
+			return nil
+		}
+		limit := parseBatchSize
+		if maximum > 0 && maximum-processedTotal < limit {
+			limit = maximum - processedTotal
+		}
+		prospects, err := nextUnparsedProspects(ctx, cfg, limit)
 		if err != nil {
 			return err
 		}
@@ -58,17 +76,18 @@ func ParseProspects(ctx context.Context, cfg Config) error {
 		if failed > 0 {
 			return fmt.Errorf("failed to parse or save %d ScreenFizz prospects", failed)
 		}
+		processedTotal += len(prospects)
 	}
 }
 
-func nextUnparsedProspects(ctx context.Context, cfg Config) ([]htmlProspect, error) {
+func nextUnparsedProspects(ctx context.Context, cfg Config, limit int) ([]htmlProspect, error) {
 	endpoint := strings.TrimRight(cfg.SupabaseURL, "/") + "/rest/v1/" + url.PathEscape(cfg.ProspectsTable)
 	query := url.Values{
 		"select":       {"id,website_html"},
 		"website_html": {"not.is.null"},
 		"parsed":       {"eq.false"},
 		"order":        {"created_at.asc"},
-		"limit":        {fmt.Sprintf("%d", parseBatchSize)},
+		"limit":        {fmt.Sprintf("%d", limit)},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+query.Encode(), nil)
 	if err != nil {

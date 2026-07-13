@@ -39,6 +39,7 @@ type Config struct {
 	BrevoWebhookSecret     string
 	DailySendLimit         int
 	DailyLeadTarget        int
+	PipelineBatchSize      int
 	AutoApprove            bool
 	PromptsTable           string
 	ApifyAPIURL            string
@@ -63,6 +64,7 @@ func ConfigFromEnv() (Config, error) {
 		BrevoWebhookSecret:     strings.TrimSpace(os.Getenv("SCREENFIZZ_BREVO_WEBHOOK_SECRET")),
 		DailySendLimit:         envPositiveIntOrDefault("SCREENFIZZ_DAILY_SEND_LIMIT", defaultDailySendLimit),
 		DailyLeadTarget:        envPositiveIntOrDefault("SCREENFIZZ_DAILY_LEAD_TARGET", 100),
+		PipelineBatchSize:      envPositiveIntOrDefault("SCREENFIZZ_PIPELINE_BATCH_SIZE", 100),
 		AutoApprove:            envBool("SCREENFIZZ_AUTO_APPROVE", false),
 		PromptsTable:           envOrDefault("SCREENFIZZ_PROMPTS_TABLE", defaultPromptsTable),
 		ApifyAPIURL:            envOrDefault("SCREENFIZZ_APIFY_API_URL", defaultApifyAPIURL),

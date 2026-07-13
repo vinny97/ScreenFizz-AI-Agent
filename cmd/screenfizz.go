@@ -30,6 +30,43 @@ func screenFizzCmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(screenFizzLeadEngineCmd())
+	var syncCounty string
+	var syncMaxPerCategory int
+	var syncDraftLimit int
+	var syncResumeRunID string
+	syncCmd := &cobra.Command{
+		Use:   "sync",
+		Short: "Run the full ScreenFizz discovery-to-draft pipeline once",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := screenfizzleadengine.ConfigFromEnv()
+			if err != nil {
+				return err
+			}
+			cfg.PipelineBatchSize = syncDraftLimit
+			var result screenfizzleadengine.PipelineResult
+			if syncResumeRunID != "" {
+				result, err = screenfizzleadengine.RunPipelineFromCompletedRun(cmd.Context(), cfg, syncResumeRunID)
+			} else {
+				campaign, campaignErr := screenfizzleadengine.BoundedApifyCampaign(cfg, syncCounty, syncMaxPerCategory)
+				if campaignErr != nil {
+					return campaignErr
+				}
+				result, err = screenfizzleadengine.RunPipeline(cmd.Context(), cfg, campaign)
+			}
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Found: %d\nInserted: %d\nAuto-approved: %d\n", result.Import.TotalReturned, result.Import.Inserted, result.AutoApproved)
+			return err
+		},
+	}
+	syncCmd.Flags().StringVar(&syncCounty, "county", "", "county to search")
+	syncCmd.Flags().IntVar(&syncMaxPerCategory, "max-per-category", 0, "maximum results per category")
+	syncCmd.Flags().IntVar(&syncDraftLimit, "draft-limit", 0, "maximum prospects to process into drafts")
+	_ = syncCmd.MarkFlagRequired("draft-limit")
+	syncCmd.Flags().StringVar(&syncResumeRunID, "resume-run-id", "", "completed Apify run ID to import without starting another actor run")
+	cmd.AddCommand(syncCmd)
 	cmd.AddCommand(&cobra.Command{
 		Use:   "enrich",
 		Short: "Download and save homepage HTML for ScreenFizz prospects",

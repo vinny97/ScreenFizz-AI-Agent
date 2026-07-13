@@ -25,10 +25,23 @@ type PipelineResult struct {
 // are always stored first as ready_to_send. Sending happens only when
 // SCREENFIZZ_AUTO_APPROVE is enabled.
 func RunPipeline(ctx context.Context, cfg Config, campaign ApifyCampaign) (PipelineResult, error) {
-	result := PipelineResult{}
+	return runPipeline(ctx, cfg, func(ctx context.Context) (RunResult, error) {
+		return NewRunner(cfg).RunCampaign(ctx, campaign)
+	})
+}
 
+// RunPipelineFromCompletedRun resumes the production pipeline from an Apify
+// dataset that has already finished. It does not start another actor run.
+func RunPipelineFromCompletedRun(ctx context.Context, cfg Config, runID string) (PipelineResult, error) {
+	return runPipeline(ctx, cfg, func(ctx context.Context) (RunResult, error) {
+		return NewRunner(cfg).ImportCompletedRun(ctx, runID)
+	})
+}
+
+func runPipeline(ctx context.Context, cfg Config, importRun func(context.Context) (RunResult, error)) (PipelineResult, error) {
+	result := PipelineResult{}
 	slog.Info("screenfizz.pipeline.stage_started", "stage", "import")
-	imported, err := NewRunner(cfg).RunCampaign(ctx, campaign)
+	imported, err := importRun(ctx)
 	if err != nil {
 		return result, fmt.Errorf("import businesses: %w", err)
 	}
@@ -39,10 +52,18 @@ func RunPipeline(ctx context.Context, cfg Config, campaign ApifyCampaign) (Pipel
 		name string
 		run  func(context.Context, Config) error
 	}{
-		{"download_website", EnrichAllProspects},
-		{"extract_text", ParseProspects},
-		{"analyse", AnalyseProspects},
-		{"generate_email_draft", GenerateProspectEmails},
+		{"download_website", func(ctx context.Context, cfg Config) error {
+			return EnrichProspectsUpTo(ctx, cfg, cfg.PipelineBatchSize)
+		}},
+		{"extract_text", func(ctx context.Context, cfg Config) error {
+			return ParseProspectsUpTo(ctx, cfg, cfg.PipelineBatchSize)
+		}},
+		{"analyse", func(ctx context.Context, cfg Config) error {
+			return AnalyseProspectsUpTo(ctx, cfg, cfg.PipelineBatchSize)
+		}},
+		{"generate_email_draft", func(ctx context.Context, cfg Config) error {
+			return GenerateProspectEmailsUpTo(ctx, cfg, cfg.PipelineBatchSize)
+		}},
 	} {
 		slog.Info("screenfizz.pipeline.stage_started", "stage", stage.name)
 		if err := stage.run(ctx, cfg); err != nil {
