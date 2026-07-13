@@ -22,8 +22,8 @@ func init() {
 }
 
 // DailyScheduler imports approximately the requested number of raw businesses
-// each day. The importer still applies its website, email, closed-place and
-// duplicate checks, so the number stored may be lower than the raw target.
+// each day. If the service starts after 08:00 UK time, it catches up that
+// missed daily run once rather than waiting for the following day.
 type DailyScheduler struct {
 	Config Config
 	Now    func() time.Time
@@ -60,7 +60,7 @@ func (s *DailyScheduler) Start(ctx context.Context) {
 
 func (s *DailyScheduler) tick(ctx context.Context) {
 	now := s.now().In(londonLocation)
-	if !isDailyRunHour(now) {
+	if !isDailyRunDue(now) {
 		return
 	}
 	day := now.Format("2006-01-02")
@@ -103,8 +103,8 @@ func dailyLeadTarget(cfg Config) int {
 	return defaultDailyLeadTarget
 }
 
-func isDailyRunHour(now time.Time) bool {
-	return now.Hour() == dailyRunHour
+func isDailyRunDue(now time.Time) bool {
+	return now.Hour() >= dailyRunHour
 }
 
 func (s *DailyScheduler) claim(day string) bool {
