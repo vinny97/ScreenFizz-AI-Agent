@@ -98,9 +98,10 @@ func TestGenerateScreenFizzEmailUsesBusinessNameAndTemplate(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"Hi Example Restaurant team,",
-		"I came across Example Restaurant",
+		"I came across Example Restaurant and wanted to introduce ScreenFizz.",
+		"A ScreenFizz player that connects to your TV",
 		"starts from £15 per month per screen",
-		"screenfizz.com",
+		"what we could create for Example Restaurant?",
 	} {
 		if !strings.Contains(email.Body, expected) {
 			t.Fatalf("email body missing %q: %s", expected, email.Body)

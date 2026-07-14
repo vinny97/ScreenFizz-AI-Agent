@@ -128,22 +128,33 @@ func generateScreenFizzEmail(prospect emailProspect) GeneratedEmail {
 	}
 	body := fmt.Sprintf(`Hi %s team,
 
-I came across %s and thought ScreenFizz could be a good fit for your business.
+I came across %s and wanted to introduce ScreenFizz.
 
-We help local businesses turn ordinary TVs and commercial displays into professional digital signage for menus, promotions, offers, events and customer information.
+We help local businesses display menus, offers, promotions and announcements on TVs or digital screens.
 
-The main difference is that we can manage everything for you. We create the content, update the screens remotely and keep everything looking fresh, so your team does not have to design graphics or keep changing USB drives.
+Here is what we provide:
 
-If you already have a TV or screen, we can usually use your existing setup. We also provide the player, software and full screen packages if needed.
+• A ScreenFizz player that connects to your TV
+• Digital signage software
+• Professionally designed content
+• Remote screen updates
+• Scheduling for different times and days
+• WhatsApp support for quick changes
 
-Our managed service starts from £15 per month per screen, and you can request changes through WhatsApp whenever you need something updated.
+You can send us a new offer, price change or announcement through WhatsApp, and we can update the screen remotely for you.
 
-Would you be open to seeing a free example of what a ScreenFizz display could look like for your business?
+You do not need to design anything, use USB drives or manage complicated software.
+
+If you already have a TV, we can usually use it. We can also provide a complete screen setup if needed.
+
+Our managed service starts from £15 per month per screen.
+
+Would you be open to seeing a free example of what we could create for %s?
 
 Best,
 Vinny
 ScreenFizz
-screenfizz.com`, businessName, businessName)
+screenfizz.com`, businessName, businessName, businessName)
 	return GeneratedEmail{
 		Subject: "A simple way to improve your in-store screens",
 		Body:    removeEmailEmDashes(body),
