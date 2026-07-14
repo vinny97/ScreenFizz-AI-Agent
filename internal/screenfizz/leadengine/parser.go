@@ -16,7 +16,10 @@ import (
 	"golang.org/x/net/html"
 )
 
-const parseBatchSize = 100
+// Website HTML is retained at up to 10 MiB per prospect while Supabase
+// responses are deliberately capped at 16 MiB. Fetching one record at a time
+// prevents a large homepage from blocking the entire parse stage.
+const parseBatchSize = 1
 
 type htmlProspect struct {
 	ID          string `json:"id"`
