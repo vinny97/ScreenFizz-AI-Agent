@@ -42,45 +42,27 @@ func (h *ScreenFizzDashboardHandler) handleDashboard(w stdhttp.ResponseWriter, r
 		writeJSON(w, stdhttp.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 		return
 	}
-	businesses, err := screenFizzRows(r.Context(), cfg, cfg.BusinessesTable, screenFizzBusinessDashboardFields)
+	// The dashboard only needs a recent working set. Loading every business and
+	// every full email body made the review page slow enough to time out.
+	businesses, err := screenFizzRows(r.Context(), cfg, cfg.BusinessesTable, screenFizzBusinessDashboardFields, nil, 100)
 	if err != nil {
 		writeJSON(w, stdhttp.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	prospects, err := screenFizzRows(r.Context(), cfg, cfg.ProspectsTable, screenFizzProspectDashboardFields)
+	prospectFilters := url.Values{
+		"status": {"in.(pending_review,ready_to_send,approved)"},
+	}
+	prospects, err := screenFizzRows(r.Context(), cfg, cfg.ProspectsTable, screenFizzProspectDashboardFields, prospectFilters, 250)
 	if err != nil {
 		writeJSON(w, stdhttp.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	stats := map[string]int{"businesses_found": len(businesses), "prospects": len(prospects)}
-	for _, p := range prospects {
-		status, _ := p["status"].(string)
-		switch status {
-		case "ready_to_send", "pending_review":
-			stats["pending_review"]++
-		case "approved":
-			stats["approved"]++
-		case "sent":
-			stats["sent"]++
-		case "replied":
-			stats["replies"]++
-		}
-		if generated, _ := p["email_generated"].(bool); generated {
-			stats["emails_generated"]++
-		}
-		if screenFizzDashboardValuePresent(p["opened_at"]) {
-			stats["opened"]++
-		}
-		if screenFizzDashboardValuePresent(p["clicked_at"]) {
-			stats["clicked"]++
-		}
+	stats, err := screenFizzDashboardStats(r.Context(), cfg)
+	if err != nil {
+		writeJSON(w, stdhttp.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
 	}
 	writeJSON(w, stdhttp.StatusOK, map[string]any{"stats": stats, "businesses": businesses, "prospects": prospects})
-}
-
-func screenFizzDashboardValuePresent(value any) bool {
-	text, ok := value.(string)
-	return ok && strings.TrimSpace(text) != ""
 }
 
 func (h *ScreenFizzDashboardHandler) handleProspectUpdate(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -138,9 +120,12 @@ func (h *ScreenFizzDashboardHandler) handleProspectUpdate(w stdhttp.ResponseWrit
 	writeJSON(w, stdhttp.StatusOK, map[string]bool{"ok": true})
 }
 
-func screenFizzRows(ctx context.Context, cfg screenfizz.Config, table, selectFields string) ([]map[string]any, error) {
+func screenFizzRows(ctx context.Context, cfg screenfizz.Config, table, selectFields string, filters url.Values, limit int) ([]map[string]any, error) {
 	u := strings.TrimRight(cfg.SupabaseURL, "/") + "/rest/v1/" + url.PathEscape(table)
-	q := url.Values{"select": {selectFields}, "order": {"created_at.desc"}, "limit": {"1000"}}
+	q := url.Values{"select": {selectFields}, "order": {"created_at.desc"}, "limit": {fmt.Sprintf("%d", limit)}}
+	for key, values := range filters {
+		q[key] = append([]string(nil), values...)
+	}
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, u+"?"+q.Encode(), nil)
 	if err != nil {
 		return nil, err
@@ -164,6 +149,72 @@ func screenFizzRows(ctx context.Context, cfg screenfizz.Config, table, selectFie
 		return nil, err
 	}
 	return rows, nil
+}
+
+func screenFizzDashboardStats(ctx context.Context, cfg screenfizz.Config) (map[string]int, error) {
+	counts := []struct {
+		key     string
+		table   string
+		filters url.Values
+	}{
+		{"businesses_found", cfg.BusinessesTable, nil},
+		{"prospects", cfg.ProspectsTable, nil},
+		{"pending_review", cfg.ProspectsTable, url.Values{"status": {"in.(pending_review,ready_to_send)"}}},
+		{"approved", cfg.ProspectsTable, url.Values{"status": {"eq.approved"}}},
+		{"sent", cfg.ProspectsTable, url.Values{"status": {"eq.sent"}}},
+		{"replies", cfg.ProspectsTable, url.Values{"status": {"eq.replied"}}},
+		{"emails_generated", cfg.ProspectsTable, url.Values{"email_generated": {"eq.true"}}},
+		{"opened", cfg.ProspectsTable, url.Values{"opened_at": {"not.is.null"}}},
+		{"clicked", cfg.ProspectsTable, url.Values{"clicked_at": {"not.is.null"}}},
+	}
+	stats := make(map[string]int, len(counts))
+	for _, count := range counts {
+		value, err := screenFizzCount(ctx, cfg, count.table, count.filters)
+		if err != nil {
+			return nil, fmt.Errorf("count ScreenFizz dashboard %s: %w", count.key, err)
+		}
+		stats[count.key] = value
+	}
+	return stats, nil
+}
+
+func screenFizzCount(ctx context.Context, cfg screenfizz.Config, table string, filters url.Values) (int, error) {
+	u := strings.TrimRight(cfg.SupabaseURL, "/") + "/rest/v1/" + url.PathEscape(table)
+	q := url.Values{"select": {"id"}, "limit": {"1"}}
+	for key, values := range filters {
+		q[key] = append([]string(nil), values...)
+	}
+	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, u+"?"+q.Encode(), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("apikey", cfg.SupabaseServiceRoleKey)
+	req.Header.Set("Authorization", "Bearer "+cfg.SupabaseServiceRoleKey)
+	req.Header.Set("Prefer", "count=exact")
+	req.Header.Set("Range", "0-0")
+	resp, err := (&stdhttp.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)); err != nil {
+		return 0, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("Supabase returned %s", resp.Status)
+	}
+	parts := strings.Split(resp.Header.Get("Content-Range"), "/")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("missing count header")
+	}
+	if parts[1] == "0" {
+		return 0, nil
+	}
+	var count int
+	if _, err := fmt.Sscanf(parts[1], "%d", &count); err != nil {
+		return 0, fmt.Errorf("parse count header: %w", err)
+	}
+	return count, nil
 }
 
 func screenFizzPatch(ctx context.Context, cfg screenfizz.Config, id string, values map[string]any) error {

@@ -30,6 +30,7 @@ export function ScreenFizzPage() {
   const [review, setReview] = useState<Row | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -54,9 +55,28 @@ export function ScreenFizzPage() {
   const categories = useMemo(() => [...new Set(data.businesses.map((b) => text(b.category)).filter(Boolean))].sort(), [data.businesses]);
   const towns = useMemo(() => [...new Set(data.businesses.map((b) => text(b.town)).filter(Boolean))].sort(), [data.businesses]);
 
-  const mutate = async (id: string, values: Row) => { await http.patch(`/v1/screenfizz/prospects/${id}`, values); await load(); };
+  const mutate = async (id: string, values: Row) => {
+    setSaving(true); setError("");
+    try {
+      await http.patch(`/v1/screenfizz/prospects/${id}`, values);
+      setData((current) => ({
+        ...current,
+        prospects: current.prospects.map((prospect) => prospect.id === id ? { ...prospect, ...values } : prospect),
+      }));
+      void load();
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? `Could not save this email: ${e.message}` : "Could not save this email.");
+      return false;
+    } finally { setSaving(false); }
+  };
   const chooseReview = (prospect: Row | null) => { setReview(prospect); setSubject(text(prospect?.email_subject)); setBody(text(prospect?.email_body)); };
   const current = review ?? pending[0] ?? null;
+  const reviewAction = async (status: "approved" | "skipped") => {
+    if (!current) return;
+    const next = pending.find((prospect) => prospect.id !== current.id) ?? null;
+    if (await mutate(current.id, { status })) chooseReview(next);
+  };
   const stat = (label: string, key: string) => <Card key={key} className="gap-2 py-4"><CardContent className="px-5"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold">{data.stats[key] ?? 0}</p></CardContent></Card>;
 
   return <div className="space-y-6 p-4 sm:p-6">
@@ -74,7 +94,7 @@ export function ScreenFizzPage() {
       <TabsContent value="overview" className="space-y-4"><div className="grid grid-cols-2 gap-3 lg:grid-cols-6">{stat("Businesses Found","businesses_found")}{stat("Prospects","prospects")}{stat("Ready to Send","pending_review")}{stat("Approved","approved")}{stat("Sent","sent")}{stat("Replies","replies")}</div></TabsContent>
       <TabsContent value="businesses"><Card><CardHeader><CardTitle>Businesses</CardTitle></CardHeader><CardContent><DataTable headers={["Business Name","Category","Town","Website","Email","Phone","Rating","Found Date","Action"]} rows={businesses.map((b) => [text(b.business_name),text(b.category),text(b.town),<Website value={text(b.website)} />,text(b.email),text(b.phone),String(b.rating ?? "—"),prettyDate(b.created_at),<Button size="sm" variant="outline" onClick={() => setSelected(b)}>View</Button>])} /></CardContent></Card></TabsContent>
       <TabsContent value="prospects"><Card><CardHeader><CardTitle>Prospects</CardTitle></CardHeader><CardContent><DataTable headers={["Business","AI Summary","Recommended Use Case","Opportunity Score","Status"]} rows={prospects.map((p) => { const b=businessOf(p); return [<button className="text-left font-medium hover:underline" onClick={() => setSelected(p)}>{text(b.business_name)}</button>,text(p.business_summary)||"—",text(p.recommended_use_case)||"—",String(p.likely_needs_digital_signage ?? "—"),text(p.status)||"—"]; })} /></CardContent></Card></TabsContent>
-      <TabsContent value="review"><ReviewCard prospect={current} subject={subject} body={body} setSubject={setSubject} setBody={setBody} onSave={() => current && void mutate(current.id,{email_subject:subject,email_body:body,status:"ready_to_send"})} onApprove={() => current && void mutate(current.id,{status:"approved"})} onReject={() => current && void mutate(current.id,{status:"skipped"})} onRegenerate={() => current && void mutate(current.id,{regenerate:true})} onNext={() => chooseReview(pending.find((p) => p.id !== current?.id) ?? null)} /></TabsContent>
+      <TabsContent value="review"><ReviewCard prospect={current} subject={subject} body={body} saving={saving} setSubject={setSubject} setBody={setBody} onSave={() => current && void mutate(current.id,{email_subject:subject,email_body:body,status:"ready_to_send"})} onApprove={() => void reviewAction("approved")} onReject={() => void reviewAction("skipped")} onRegenerate={() => current && void mutate(current.id,{regenerate:true})} onNext={() => chooseReview(pending.find((p) => p.id !== current?.id) ?? null)} /></TabsContent>
       <TabsContent value="approved"><Card><CardHeader><CardTitle>Approved emails</CardTitle></CardHeader><CardContent><DataTable headers={["Business","Email","Approved At","Actions"]} rows={approved.map((p) => {const b=businessOf(p); return [text(b.business_name),text(b.email),prettyDate(p.updated_at ?? p.created_at),<div className="flex gap-2"><Button size="sm" variant="outline" disabled title="Sending stays in the ScreenFizz pipeline"><Send/> Send Now</Button><Button size="sm" variant="outline" onClick={() => void mutate(p.id,{status:"ready_to_send"})}>Move Back To Review</Button></div>];})} /></CardContent></Card></TabsContent>
       <TabsContent value="analytics"><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{stat("Businesses Imported","businesses_found")}{stat("Emails Generated","emails_generated")}{stat("Approved","approved")}{stat("Sent","sent")}{stat("Opened","opened")}{stat("Clicked","clicked")}{stat("Replies","replies")}</div></TabsContent>
     </Tabs>
@@ -85,4 +105,4 @@ export function ScreenFizzPage() {
 function DataTable({headers,rows}:{headers:string[];rows:any[][]}) { return <div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">{headers.map((h)=><th key={h} className="px-3 py-3 font-medium">{h}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i} className="border-b last:border-0">{row.map((cell,j)=><td key={j} className="px-3 py-3 align-top">{cell||"—"}</td>)}</tr>)}{rows.length===0&&<tr><td className="px-3 py-8 text-muted-foreground" colSpan={headers.length}>No matching records.</td></tr>}</tbody></table></div>; }
 function Website({value}:{value:string}) { return value ? <a className="inline-flex items-center gap-1 text-primary hover:underline" target="_blank" rel="noreferrer" href={value.startsWith("http")?value:`https://${value}`}>{value}<ExternalLink className="size-3"/></a> : <>—</>; }
 function Detail({label,children}:{label:string;children:ReactNode}) { return <div><p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p><div className="whitespace-pre-wrap leading-6">{children}</div></div>; }
-function ReviewCard(props:any) { const {prospect,subject,body,setSubject,setBody,onSave,onApprove,onReject,onRegenerate,onNext}=props; if(!prospect)return <Card><CardContent className="p-8 text-center text-muted-foreground">No pending emails to review.</CardContent></Card>; const b=businessOf(prospect); return <Card><CardHeader><CardTitle>{text(b.business_name)}</CardTitle><p className="text-sm text-muted-foreground"><Website value={text(b.website)} /> · {text(b.town)||"Town unavailable"}</p></CardHeader><CardContent className="space-y-5"><div className="grid gap-4 md:grid-cols-3"><Detail label="AI Summary">{text(prospect.business_summary)||"—"}</Detail><Detail label="Recommended Use Case">{text(prospect.recommended_use_case)||"—"}</Detail><Detail label="Personalisation Line">{text(prospect.personalisation_line)||"—"}</Detail></div><div><label className="text-sm font-medium">Subject</label><Input className="mt-2 text-base md:text-sm" value={subject} onChange={(e)=>setSubject(e.target.value)}/></div><div><label className="text-sm font-medium">Email Body</label><Textarea className="mt-2 min-h-64 text-base md:text-sm" value={body} onChange={(e)=>setBody(e.target.value)}/></div><div className="flex flex-wrap gap-2 border-t pt-4"><Button onClick={onApprove}>Approve</Button><Button variant="destructive" onClick={onReject}>Reject</Button><Button variant="outline" onClick={onRegenerate}>Regenerate</Button><Button variant="secondary" onClick={onSave}>Save Changes</Button><Button variant="ghost" onClick={onNext}>Next Prospect</Button></div></CardContent></Card>; }
+function ReviewCard(props:any) { const {prospect,subject,body,saving,setSubject,setBody,onSave,onApprove,onReject,onRegenerate,onNext}=props; if(!prospect)return <Card><CardContent className="p-8 text-center text-muted-foreground">No pending emails to review.</CardContent></Card>; const b=businessOf(prospect); return <Card><CardHeader><CardTitle>{text(b.business_name)}</CardTitle><p className="text-sm text-muted-foreground"><Website value={text(b.website)} /> · {text(b.town)||"Town unavailable"}</p></CardHeader><CardContent className="space-y-5"><div className="grid gap-4 md:grid-cols-3"><Detail label="AI Summary">{text(prospect.business_summary)||"—"}</Detail><Detail label="Recommended Use Case">{text(prospect.recommended_use_case)||"—"}</Detail><Detail label="Personalisation Line">{text(prospect.personalisation_line)||"—"}</Detail></div><div><label className="text-sm font-medium">Subject</label><Input className="mt-2 text-base md:text-sm" value={subject} onChange={(e)=>setSubject(e.target.value)}/></div><div><label className="text-sm font-medium">Email Body</label><Textarea className="mt-2 min-h-64 text-base md:text-sm" value={body} onChange={(e)=>setBody(e.target.value)}/></div><div className="flex flex-wrap gap-2 border-t pt-4"><Button disabled={saving} onClick={onApprove}>Approve</Button><Button disabled={saving} variant="destructive" onClick={onReject}>Reject</Button><Button disabled={saving} variant="outline" onClick={onRegenerate}>Regenerate</Button><Button disabled={saving} variant="secondary" onClick={onSave}>Save Changes</Button><Button disabled={saving} variant="ghost" onClick={onNext}>Next Prospect</Button></div></CardContent></Card>; }
