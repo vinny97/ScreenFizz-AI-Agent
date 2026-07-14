@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -16,12 +17,12 @@ func TestDecodeGeneratedEmailEnforcesWordLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if email.Subject == "" || len(strings.Fields(email.Body)) > 150 {
+	if email.Subject == "" || len(strings.Fields(email.Body)) > generatedEmailMaxWords {
 		t.Fatalf("unexpected generated email: %#v", email)
 	}
-	tooLong := `{"subject":"Subject","email_body":"` + strings.Repeat("word ", 151) + `"}`
+	tooLong := `{"subject":"Subject","email_body":"` + strings.Repeat("word ", generatedEmailMaxWords+1) + `"}`
 	if _, err := decodeGeneratedEmail(tooLong); err == nil {
-		t.Fatal("expected an email body above 150 words to be rejected")
+		t.Fatal("expected an email body above the maximum to be rejected")
 	}
 }
 
@@ -36,6 +37,20 @@ func TestDecodeGeneratedEmailRemovesEmDashes(t *testing.T) {
 }
 
 func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
+	promptSeen := false
+	ai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "A ScreenFizz player that connects to your TV") || !strings.Contains(string(body), "seasonal offers") {
+			t.Fatalf("email prompt missing template or personalisation: %s", body)
+		}
+		promptSeen = true
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + strconv.Quote(validGeneratedEmailJSON) + `}}]}`))
+	}))
+	defer ai.Close()
+
 	getCalls := 0
 	updated := false
 	supabase := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +92,9 @@ func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 		SupabaseURL:            supabase.URL,
 		SupabaseServiceRoleKey: "service-key",
 		ProspectsTable:         "screenfizz_prospects",
+		AIAPIKey:               "ai-key",
+		AIAPIURL:               ai.URL,
+		AIModel:                "test-model",
 		BrevoAPIKey:            "brevo-key",
 		BrevoAPIURL:            supabase.URL,
 	})
@@ -86,25 +104,7 @@ func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 	if !updated {
 		t.Fatal("expected generated email to be stored")
 	}
-}
-
-func TestGenerateScreenFizzEmailUsesBusinessNameAndTemplate(t *testing.T) {
-	email := generateScreenFizzEmail(emailProspect{Business: struct {
-		BusinessName string `json:"business_name"`
-		Category     string `json:"category"`
-	}{BusinessName: "Example Restaurant"}})
-	if email.Subject != "A simple way to improve your in-store screens" {
-		t.Fatalf("subject = %q", email.Subject)
-	}
-	for _, expected := range []string{
-		"Hi Example Restaurant team,",
-		"I came across Example Restaurant and wanted to introduce ScreenFizz.",
-		"A ScreenFizz player that connects to your TV",
-		"starts from £15 per month per screen",
-		"what we could create for Example Restaurant?",
-	} {
-		if !strings.Contains(email.Body, expected) {
-			t.Fatalf("email body missing %q: %s", expected, email.Body)
-		}
+	if !promptSeen {
+		t.Fatal("expected the email-generation prompt")
 	}
 }
