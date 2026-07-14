@@ -46,7 +46,10 @@ type activeEmailCampaign struct {
 	CTAURL        string
 }
 
-var placeholderPattern = regexp.MustCompile(`{{\s*([a-zA-Z0-9_]+)\s*}}`)
+var (
+	placeholderPattern = regexp.MustCompile(`{{\s*([a-zA-Z0-9_]+)\s*}}`)
+	emDashPattern      = regexp.MustCompile(`\s*—\s*`)
+)
 
 // GenerateQueuedEmails copies the active campaign email template into queued leads.
 func (c *Client) GenerateQueuedEmails(ctx context.Context) (GenerateResult, error) {
@@ -63,6 +66,8 @@ func (c *Client) GenerateQueuedEmails(ctx context.Context) (GenerateResult, erro
 	for _, lead := range leads {
 		htmlBody := renderTemplateWithSignature(campaign.HTMLTemplate, campaign.HTMLSignature, buildPlaceholderValues(lead, campaign))
 		textBody := renderTemplateWithSignature(campaign.TextTemplate, campaign.TextSignature, buildPlaceholderValues(lead, campaign))
+		htmlBody = removeEmailEmDashes(htmlBody)
+		textBody = removeEmailEmDashes(textBody)
 		if err := c.updateLeadEmailContent(ctx, lead.ID, campaign.Subject, htmlBody, textBody); err != nil {
 			return GenerateResult{}, err
 		}
@@ -267,6 +272,10 @@ func renderPlaceholders(template string, placeholders map[string]string) string 
 		}
 		return ""
 	})
+}
+
+func removeEmailEmDashes(value string) string {
+	return emDashPattern.ReplaceAllString(value, ", ")
 }
 
 func clonePlaceholders(values map[string]string) map[string]string {

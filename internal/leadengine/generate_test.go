@@ -132,6 +132,15 @@ func TestRenderTemplateWithSignature(t *testing.T) {
 	}
 }
 
+func TestRemoveEmailEmDashes(t *testing.T) {
+	t.Parallel()
+
+	got := removeEmailEmDashes("Hello — a natural note")
+	if got != "Hello, a natural note" {
+		t.Fatalf("removeEmailEmDashes() = %q", got)
+	}
+}
+
 func TestRenderPlaceholdersSupportsUnsubscribeURL(t *testing.T) {
 	t.Parallel()
 

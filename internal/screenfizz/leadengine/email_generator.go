@@ -10,11 +10,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const emailGenerationBatchSize = 25
+
+var emDashPattern = regexp.MustCompile(`\s*—\s*`)
 
 type emailProspect struct {
 	ID                  string `json:"id"`
@@ -137,7 +140,7 @@ func (c *analysisClient) generateEmail(ctx context.Context, prospect emailProspe
 		return GeneratedEmail{}, fmt.Errorf("encode email generation input: %w", err)
 	}
 	content, err := c.completeJSON(ctx,
-		"Return only a JSON object with exactly these fields: subject (string), email_body (string). Write a personal, natural outreach email under 150 words. Mention the business by name, include the supplied personalisation_line exactly, explain one specific way ScreenFizz could help this business, and end by asking whether they would like a free mock-up. Do not use markdown. Do not include a signature. Do not claim to have used AI.",
+		"Return only a JSON object with exactly these fields: subject (string), email_body (string). Write a natural, professional, and polite outreach email under 150 words. Mention the business by name, include the supplied personalisation_line exactly, explain one specific way ScreenFizz could help this business, and end by asking whether they would like a free mock-up. Do not use markdown, em dashes, or a signature. Do not claim to have used AI.",
 		string(input))
 	if err != nil {
 		return GeneratedEmail{}, err
@@ -158,10 +161,15 @@ func decodeGeneratedEmail(content string) (GeneratedEmail, error) {
 	if raw.Subject == nil || raw.Body == nil || strings.TrimSpace(*raw.Subject) == "" || strings.TrimSpace(*raw.Body) == "" {
 		return GeneratedEmail{}, errors.New("generated email response is missing required fields")
 	}
-	if len(strings.Fields(*raw.Body)) > 150 {
+	body := removeEmailEmDashes(strings.TrimSpace(*raw.Body))
+	if len(strings.Fields(body)) > 150 {
 		return GeneratedEmail{}, errors.New("generated email body exceeds 150 words")
 	}
-	return GeneratedEmail{Subject: strings.TrimSpace(*raw.Subject), Body: strings.TrimSpace(*raw.Body)}, nil
+	return GeneratedEmail{Subject: strings.TrimSpace(*raw.Subject), Body: body}, nil
+}
+
+func removeEmailEmDashes(value string) string {
+	return emDashPattern.ReplaceAllString(value, ", ")
 }
 
 func saveGeneratedEmail(ctx context.Context, cfg Config, prospectID string, email GeneratedEmail) error {

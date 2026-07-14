@@ -70,6 +70,8 @@ func (c *Client) GenerateQueuedEmailsForCampaign(ctx context.Context, campaign S
 	for _, lead := range leads {
 		htmlBody := renderTemplateWithSignature(active.HTMLTemplate, active.HTMLSignature, buildPlaceholderValues(lead, active))
 		textBody := renderTemplateWithSignature(active.TextTemplate, active.TextSignature, buildPlaceholderValues(lead, active))
+		htmlBody = removeEmailEmDashes(htmlBody)
+		textBody = removeEmailEmDashes(textBody)
 		if err := c.updateLeadEmailContent(ctx, lead.ID, active.Subject, htmlBody, textBody); err != nil {
 			return GenerateResult{}, err
 		}

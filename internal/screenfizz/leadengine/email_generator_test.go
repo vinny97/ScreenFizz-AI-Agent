@@ -26,6 +26,16 @@ func TestDecodeGeneratedEmailEnforcesWordLimit(t *testing.T) {
 	}
 }
 
+func TestDecodeGeneratedEmailRemovesEmDashes(t *testing.T) {
+	email, err := decodeGeneratedEmail(`{"subject":"Subject","email_body":"Hi there — a polite, professional note."}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(email.Body, "—") || email.Body != "Hi there, a polite, professional note." {
+		t.Fatalf("email body = %q", email.Body)
+	}
+}
+
 func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 	ai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
