@@ -88,7 +88,10 @@ func generateProspectEmails(ctx context.Context, cfg Config, maximum int) error 
 			}
 		}
 		if failed > 0 {
-			return fmt.Errorf("failed to generate or save %d ScreenFizz prospect emails", failed)
+			slog.Warn("ScreenFizz email generation batch completed with failures; successful drafts will continue through the pipeline", "failed", failed)
+			if maximum <= 0 {
+				return nil
+			}
 		}
 		processedTotal += len(prospects)
 	}

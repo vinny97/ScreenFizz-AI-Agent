@@ -114,7 +114,10 @@ func analyseProspects(ctx context.Context, cfg Config, maximum int) error {
 			}
 		}
 		if failed > 0 {
-			return fmt.Errorf("failed to analyse or save %d ScreenFizz prospects", failed)
+			slog.Warn("ScreenFizz analysis batch completed with failures; successful prospects will continue to email generation", "failed", failed)
+			if maximum <= 0 {
+				return nil
+			}
 		}
 		processedTotal += len(prospects)
 	}
