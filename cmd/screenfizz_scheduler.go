@@ -20,4 +20,5 @@ func startScreenFizzScheduler(ctx context.Context) {
 		return
 	}
 	sendScheduler.Start(ctx)
+	screenfizz.StartAIReviewBatchScheduler(ctx, scheduler.Config)
 }

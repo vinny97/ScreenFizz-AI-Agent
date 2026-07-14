@@ -127,6 +127,7 @@ func nextEmailProspects(ctx context.Context, cfg Config, limit int) ([]emailPros
 		"select":          {"id,business_summary,business_type,recommended_use_case,personalisation_line,screenfizz_businesses(business_name,category)"},
 		"analysed":        {"eq.true"},
 		"email_generated": {"eq.false"},
+		"status":          {"is.null"},
 		"order":           {"created_at.asc"},
 		"limit":           {fmt.Sprintf("%d", limit)},
 	}
@@ -241,11 +242,15 @@ func toBritishEnglish(value string) string {
 }
 
 func saveGeneratedEmail(ctx context.Context, cfg Config, prospectID string, email GeneratedEmail) error {
+	return saveGeneratedEmailStatus(ctx, cfg, prospectID, email, "ready_to_send")
+}
+
+func saveGeneratedEmailStatus(ctx context.Context, cfg Config, prospectID string, email GeneratedEmail, status string) error {
 	body, err := json.Marshal(map[string]any{
 		"email_subject":   email.Subject,
 		"email_body":      email.Body,
 		"email_generated": true,
-		"status":          "ready_to_send",
+		"status":          status,
 	})
 	if err != nil {
 		return fmt.Errorf("encode generated email: %w", err)
