@@ -97,7 +97,8 @@ func TestGenerateScreenFizzEmailKeepsFoundationAndBritishEnglish(t *testing.T) {
 		}{BusinessName: "Example Restaurant"},
 	})
 	for _, expected := range []string{
-		"Hi Example Restaurant team,",
+		"Hi there,",
+		"I came across your business and wanted to introduce ScreenFizz.",
 		"We specialise in seasonal offers.",
 		"A ScreenFizz player that connects to your TV",
 		"WhatsApp support for quick changes",

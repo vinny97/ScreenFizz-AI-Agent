@@ -19,9 +19,9 @@ const (
 	emailGenerationBatchSize = 25
 	generatedEmailMaxWords   = 220
 	screenFizzEmailSubject   = "A simple way to improve your in-store screens"
-	screenFizzEmailBase      = `Hi [Business Name] team,
+	screenFizzEmailBase      = `Hi there,
 
-I came across [Business Name] and wanted to introduce ScreenFizz.
+I came across your business and wanted to introduce ScreenFizz.
 
 We help local businesses display menus, offers, promotions and announcements on TVs or digital screens.
 
@@ -164,9 +164,9 @@ func generateScreenFizzEmail(prospect emailProspect) GeneratedEmail {
 	if personalisation != "" {
 		personalisation += "\n\n"
 	}
-	body := fmt.Sprintf(`Hi %s team,
+	body := fmt.Sprintf(`Hi there,
 
-I came across %s and wanted to introduce ScreenFizz.
+I came across your business and wanted to introduce ScreenFizz.
 
 %sWe help local businesses display menus, offers, promotions and announcements on TVs or digital screens.
 
@@ -192,7 +192,7 @@ Would you be open to seeing a free example of what we could create for %s?
 Best,
 Vinny
 ScreenFizz
-screenfizz.com`, businessName, businessName, personalisation, businessName)
+screenfizz.com`, personalisation, businessName)
 	return GeneratedEmail{Subject: screenFizzEmailSubject, Body: toBritishEnglish(removeEmailEmDashes(body))}
 }
 
