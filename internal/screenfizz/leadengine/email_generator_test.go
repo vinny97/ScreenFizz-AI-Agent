@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -37,20 +36,6 @@ func TestDecodeGeneratedEmailRemovesEmDashes(t *testing.T) {
 }
 
 func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
-	promptSeen := false
-	ai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(body), "A ScreenFizz player that connects to your TV") || !strings.Contains(string(body), "seasonal offers") {
-			t.Fatalf("email prompt missing template or personalisation: %s", body)
-		}
-		promptSeen = true
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + strconv.Quote(validGeneratedEmailJSON) + `}}]}`))
-	}))
-	defer ai.Close()
-
 	getCalls := 0
 	updated := false
 	supabase := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -92,9 +77,6 @@ func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 		SupabaseURL:            supabase.URL,
 		SupabaseServiceRoleKey: "service-key",
 		ProspectsTable:         "screenfizz_prospects",
-		AIAPIKey:               "ai-key",
-		AIAPIURL:               ai.URL,
-		AIModel:                "test-model",
 		BrevoAPIKey:            "brevo-key",
 		BrevoAPIURL:            supabase.URL,
 	})
@@ -104,7 +86,29 @@ func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 	if !updated {
 		t.Fatal("expected generated email to be stored")
 	}
-	if !promptSeen {
-		t.Fatal("expected the email-generation prompt")
+}
+
+func TestGenerateScreenFizzEmailKeepsFoundationAndBritishEnglish(t *testing.T) {
+	email := generateScreenFizzEmail(emailProspect{
+		PersonalisationLine: "We specialize in seasonal offers.",
+		Business: struct {
+			BusinessName string `json:"business_name"`
+			Category     string `json:"category"`
+		}{BusinessName: "Example Restaurant"},
+	})
+	for _, expected := range []string{
+		"Hi Example Restaurant team,",
+		"We specialise in seasonal offers.",
+		"A ScreenFizz player that connects to your TV",
+		"WhatsApp support for quick changes",
+		"£15 per month per screen",
+		"free example of what we could create for Example Restaurant",
+	} {
+		if !strings.Contains(email.Body, expected) {
+			t.Fatalf("email body missing %q: %s", expected, email.Body)
+		}
+	}
+	if strings.Contains(email.Body, "specialize") || strings.Contains(email.Body, "—") {
+		t.Fatalf("email body has non-UK punctuation or spelling: %s", email.Body)
 	}
 }

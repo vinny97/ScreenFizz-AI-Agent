@@ -177,7 +177,7 @@ func (c *analysisClient) analyse(ctx context.Context, prospect analysisProspect)
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "Return only a JSON object with exactly these fields: business_summary (string), business_type (string), recommended_use_case (string), personalisation_line (string). The personalisation_line must be a specific, natural observation grounded in the supplied website data, suitable for the opening of a future outreach email. Do not generate a full email. Do not include markdown or additional fields.",
+				"content": "Return only a JSON object with exactly these fields: business_summary (string), business_type (string), recommended_use_case (string), personalisation_line (string). The personalisation_line must be a specific, natural observation grounded in the supplied website data, suitable for the opening of a future outreach email. Use British English spelling. Do not generate a full email. Do not include markdown or additional fields.",
 			},
 			{"role": "user", "content": string(input)},
 		},

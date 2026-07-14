@@ -87,10 +87,6 @@ func GenerateProspectEmailsUpTo(ctx context.Context, cfg Config, maximum int) er
 }
 
 func generateProspectEmails(ctx context.Context, cfg Config, maximum int) error {
-	client, err := newAnalysisClient(cfg)
-	if err != nil {
-		return err
-	}
 	processedTotal := 0
 	for {
 		if maximum > 0 && processedTotal >= maximum {
@@ -109,12 +105,7 @@ func generateProspectEmails(ctx context.Context, cfg Config, maximum int) error 
 		}
 		failed := 0
 		for _, prospect := range prospects {
-			email, err := client.generateScreenFizzEmail(ctx, prospect)
-			if err != nil {
-				slog.Error("Failed to generate prospect email", "prospect_id", prospect.ID, "error", err)
-				failed++
-				continue
-			}
+			email := generateScreenFizzEmail(prospect)
 			if err := saveGeneratedEmail(ctx, cfg, prospect.ID, email); err != nil {
 				slog.Error("Failed to save prospect email", "prospect_id", prospect.ID, "error", err)
 				failed++
@@ -163,35 +154,45 @@ func nextEmailProspects(ctx context.Context, cfg Config, limit int) ([]emailPros
 	return prospects, nil
 }
 
-func (c *analysisClient) generateScreenFizzEmail(ctx context.Context, prospect emailProspect) (GeneratedEmail, error) {
-	input, err := json.Marshal(map[string]string{
-		"business_name":        prospect.Business.BusinessName,
-		"category":             prospect.Business.Category,
-		"business_summary":     prospect.BusinessSummary,
-		"business_type":        prospect.BusinessType,
-		"recommended_use_case": prospect.RecommendedUseCase,
-		"personalisation_line": prospect.PersonalisationLine,
-	})
-	if err != nil {
-		return GeneratedEmail{}, fmt.Errorf("encode email generation input: %w", err)
+func generateScreenFizzEmail(prospect emailProspect) GeneratedEmail {
+	businessName := strings.TrimSpace(prospect.Business.BusinessName)
+	if businessName == "" {
+		businessName = "there"
 	}
-	content, err := c.completeJSON(ctx, fmt.Sprintf(`Return only a JSON object with exactly these fields: subject (string), email_body (string).
-
-The subject must be exactly: %q
-
-Write a natural, professional, polite outreach email using the base template below as its foundation. Personalise the introduction and relevance to the supplied business analysis. Use the personalisation_line exactly once where it fits naturally. Keep the core ScreenFizz offer, managed service, WhatsApp support, £15 per month per screen price, and free mock-up CTA. Address the recipient as "[Business Name] team" because no contact first name is available. Do not invent facts. Do not use em dashes. Do not use markdown headings. Keep the email within %d words.
-
-Base template:
-%s`, screenFizzEmailSubject, generatedEmailMaxWords, screenFizzEmailBase), string(input))
-	if err != nil {
-		return GeneratedEmail{}, err
+	personalisation := toBritishEnglish(strings.TrimSpace(prospect.PersonalisationLine))
+	if personalisation != "" {
+		personalisation += "\n\n"
 	}
-	email, err := decodeGeneratedEmail(content)
-	if err != nil {
-		return GeneratedEmail{}, err
-	}
-	email.Subject = screenFizzEmailSubject
-	return email, nil
+	body := fmt.Sprintf(`Hi %s team,
+
+I came across %s and wanted to introduce ScreenFizz.
+
+%sWe help local businesses display menus, offers, promotions and announcements on TVs or digital screens.
+
+Here is what we provide:
+
+• A ScreenFizz player that connects to your TV
+• Digital signage software
+• Professionally designed content
+• Remote screen updates
+• Scheduling for different times and days
+• WhatsApp support for quick changes
+
+You can send us a new offer, price change or announcement through WhatsApp, and we can update the screen remotely for you.
+
+You do not need to design anything, use USB drives or manage complicated software.
+
+If you already have a TV, we can usually use it. We can also provide a complete screen setup if needed.
+
+Our managed service starts from £15 per month per screen.
+
+Would you be open to seeing a free example of what we could create for %s?
+
+Best,
+Vinny
+ScreenFizz
+screenfizz.com`, businessName, businessName, personalisation, businessName)
+	return GeneratedEmail{Subject: screenFizzEmailSubject, Body: toBritishEnglish(removeEmailEmDashes(body))}
 }
 
 func decodeGeneratedEmail(content string) (GeneratedEmail, error) {
@@ -216,6 +217,27 @@ func decodeGeneratedEmail(content string) (GeneratedEmail, error) {
 
 func removeEmailEmDashes(value string) string {
 	return emDashPattern.ReplaceAllString(value, ", ")
+}
+
+var britishEnglishReplacer = strings.NewReplacer(
+	"specialized", "specialised",
+	"specializing", "specialising",
+	"specialize", "specialise",
+	"customized", "customised",
+	"customizing", "customising",
+	"customize", "customise",
+	"personalized", "personalised",
+	"personalizing", "personalising",
+	"personalize", "personalise",
+	"organized", "organised",
+	"organizing", "organising",
+	"organize", "organise",
+	"favorite", "favourite",
+	"color", "colour",
+)
+
+func toBritishEnglish(value string) string {
+	return britishEnglishReplacer.Replace(value)
 }
 
 func saveGeneratedEmail(ctx context.Context, cfg Config, prospectID string, email GeneratedEmail) error {
