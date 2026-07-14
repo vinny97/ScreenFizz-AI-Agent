@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -37,18 +36,6 @@ func TestDecodeGeneratedEmailRemovesEmDashes(t *testing.T) {
 }
 
 func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
-	ai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(body), "Example Restaurant") || !strings.Contains(string(body), "free mock-up") {
-			t.Fatalf("email prompt missing expected data: %s", body)
-		}
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + strconv.Quote(validGeneratedEmailJSON) + `}}]}`))
-	}))
-	defer ai.Close()
-
 	getCalls := 0
 	updated := false
 	supabase := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +63,7 @@ func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(body), `"email_subject":"A quick idea for Example Restaurant"`) || !strings.Contains(string(body), `"email_generated":true`) || !strings.Contains(string(body), `"status":"ready_to_send"`) || strings.Contains(string(body), "brevo") {
+			if !strings.Contains(string(body), `"email_subject":"A simple way to improve your in-store screens"`) || !strings.Contains(string(body), `"email_generated":true`) || !strings.Contains(string(body), `"status":"ready_to_send"`) || strings.Contains(string(body), "brevo") {
 				t.Fatalf("unexpected generated email update: %s", body)
 			}
 			updated = true
@@ -90,9 +77,6 @@ func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 		SupabaseURL:            supabase.URL,
 		SupabaseServiceRoleKey: "service-key",
 		ProspectsTable:         "screenfizz_prospects",
-		AIAPIKey:               "ai-key",
-		AIAPIURL:               ai.URL,
-		AIModel:                "test-model",
 		BrevoAPIKey:            "brevo-key",
 		BrevoAPIURL:            supabase.URL,
 	})
@@ -101,5 +85,25 @@ func TestGenerateProspectEmailsSavesDraftWithoutSending(t *testing.T) {
 	}
 	if !updated {
 		t.Fatal("expected generated email to be stored")
+	}
+}
+
+func TestGenerateScreenFizzEmailUsesBusinessNameAndTemplate(t *testing.T) {
+	email := generateScreenFizzEmail(emailProspect{Business: struct {
+		BusinessName string `json:"business_name"`
+		Category     string `json:"category"`
+	}{BusinessName: "Example Restaurant"}})
+	if email.Subject != "A simple way to improve your in-store screens" {
+		t.Fatalf("subject = %q", email.Subject)
+	}
+	for _, expected := range []string{
+		"Hi Example Restaurant team,",
+		"I came across Example Restaurant",
+		"starts from £15 per month per screen",
+		"screenfizz.com",
+	} {
+		if !strings.Contains(email.Body, expected) {
+			t.Fatalf("email body missing %q: %s", expected, email.Body)
+		}
 	}
 }

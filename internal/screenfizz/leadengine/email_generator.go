@@ -54,10 +54,6 @@ func GenerateProspectEmailsUpTo(ctx context.Context, cfg Config, maximum int) er
 }
 
 func generateProspectEmails(ctx context.Context, cfg Config, maximum int) error {
-	client, err := newAnalysisClient(cfg)
-	if err != nil {
-		return err
-	}
 	processedTotal := 0
 	for {
 		if maximum > 0 && processedTotal >= maximum {
@@ -76,12 +72,7 @@ func generateProspectEmails(ctx context.Context, cfg Config, maximum int) error 
 		}
 		failed := 0
 		for _, prospect := range prospects {
-			email, err := client.generateEmail(ctx, prospect)
-			if err != nil {
-				slog.Error("Failed to generate prospect email", "prospect_id", prospect.ID, "error", err)
-				failed++
-				continue
-			}
+			email := generateScreenFizzEmail(prospect)
 			if err := saveGeneratedEmail(ctx, cfg, prospect.ID, email); err != nil {
 				slog.Error("Failed to save prospect email", "prospect_id", prospect.ID, "error", err)
 				failed++
@@ -130,25 +121,33 @@ func nextEmailProspects(ctx context.Context, cfg Config, limit int) ([]emailPros
 	return prospects, nil
 }
 
-func (c *analysisClient) generateEmail(ctx context.Context, prospect emailProspect) (GeneratedEmail, error) {
-	input, err := json.Marshal(map[string]string{
-		"business_name":        prospect.Business.BusinessName,
-		"category":             prospect.Business.Category,
-		"business_summary":     prospect.BusinessSummary,
-		"business_type":        prospect.BusinessType,
-		"recommended_use_case": prospect.RecommendedUseCase,
-		"personalisation_line": prospect.PersonalisationLine,
-	})
-	if err != nil {
-		return GeneratedEmail{}, fmt.Errorf("encode email generation input: %w", err)
+func generateScreenFizzEmail(prospect emailProspect) GeneratedEmail {
+	businessName := strings.TrimSpace(prospect.Business.BusinessName)
+	if businessName == "" {
+		businessName = "there"
 	}
-	content, err := c.completeJSON(ctx,
-		"Return only a JSON object with exactly these fields: subject (string), email_body (string). Write a natural, professional, and polite outreach email under 150 words. Mention the business by name, include the supplied personalisation_line exactly, explain one specific way ScreenFizz could help this business, and end by asking whether they would like a free mock-up. Do not use markdown, em dashes, or a signature. Do not claim to have used AI.",
-		string(input))
-	if err != nil {
-		return GeneratedEmail{}, err
+	body := fmt.Sprintf(`Hi %s team,
+
+I came across %s and thought ScreenFizz could be a good fit for your business.
+
+We help local businesses turn ordinary TVs and commercial displays into professional digital signage for menus, promotions, offers, events and customer information.
+
+The main difference is that we can manage everything for you. We create the content, update the screens remotely and keep everything looking fresh, so your team does not have to design graphics or keep changing USB drives.
+
+If you already have a TV or screen, we can usually use your existing setup. We also provide the player, software and full screen packages if needed.
+
+Our managed service starts from £15 per month per screen, and you can request changes through WhatsApp whenever you need something updated.
+
+Would you be open to seeing a free example of what a ScreenFizz display could look like for your business?
+
+Best,
+Vinny
+ScreenFizz
+screenfizz.com`, businessName, businessName)
+	return GeneratedEmail{
+		Subject: "A simple way to improve your in-store screens",
+		Body:    removeEmailEmDashes(body),
 	}
-	return decodeGeneratedEmail(content)
 }
 
 func decodeGeneratedEmail(content string) (GeneratedEmail, error) {
