@@ -57,6 +57,18 @@ func (s *SendScheduler) tick(ctx context.Context) {
 	if !s.Config.AutoApprove {
 		return
 	}
+	// The main pipeline approves newly created drafts at the end of a successful
+	// run. This catch-up keeps the queue moving if a previous run stopped after
+	// generation, or if a draft was saved outside that run. Approval never sends
+	// immediately; sending still waits for the daytime window below.
+	approved, err := ApproveReadyToSendProspects(ctx, s.Config)
+	if err != nil {
+		slog.Error("screenfizz.send_scheduler.auto_approve_failed", "error", err)
+		return
+	}
+	if approved > 0 {
+		slog.Info("screenfizz.send_scheduler.auto_approved", "count", approved)
+	}
 	now := s.now().In(londonLocation)
 	if now.Hour() < screenFizzSendStartHour || now.Hour() >= screenFizzSendEndHour {
 		return
